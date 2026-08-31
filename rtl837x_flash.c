@@ -392,21 +392,26 @@ void flash_write_bytes(__xdata uint8_t *ptr)
  * flash controller and the SPI chip instead of letting a dead, miswired or
  * overvolted chip hang the boot with zero output.
  *
+ * SEGMENT NOTE: bank 0 holds only 16 KB (0x00002-0x04000) and was already
+ * full, so this block lives in BANK2 like the other drivers (rtl837x_init.c,
+ * rtl837x_leds.c). Kept in bank 0 it failed the link with
+ *     Error: Bank 0: code segment too large at 0x4000!
+ *
  * RAM NOTE: the 8051 has only 128 bytes of internal RAM and the overlay
- * segment (OSEG) was already full -- adding this with ordinary locals made
- * the link fail with
- *     ?ASlink-Error-Could not get N consecutive bytes in internal RAM
- * So every piece of state here lives in XRAM and no helper takes pointer
- * parameters. Internal RAM cost of this whole block: zero.
+ * segment (OSEG) was full too, so every piece of state here lives in XRAM and
+ * no helper takes pointer parameters. Internal RAM cost: zero.
  *
  * XIP NOTE: the CPU executes out of this very flash through MMIO, so any
  * change to MODEB / CMD_R / DUMMYCYCLES must be undone before returning.
- * The helpers below restore MMIO *before* returning; all printing happens
- * afterwards, from the caller.
+ * The helpers restore MMIO *before* returning; printing happens afterwards,
+ * from the caller.
  *
  * Self-contained on purpose: uses its own status read rather than
  * flash_read_status(), so it still works if that one is the thing broken.
  * ------------------------------------------------------------------ */
+
+#pragma codeseg BANK2
+#pragma constseg BANK2
 
 __xdata static uint8_t	fd_st;			/* last status / error flag */
 __xdata static uint8_t	fd_mid, fd_typ, fd_cap;	/* last RDID bytes */
@@ -473,7 +478,7 @@ static void fdig_rdid(uint8_t dio)
 }
 
 
-void flash_diag(void)
+void flash_diag(void) __banked
 {
 	print_string("\n[FLASH-DIAG] controller:");
 	print_string(" cfg=0x"); print_byte(SFR_FLASH_CONFIG);
