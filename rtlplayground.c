@@ -1933,9 +1933,10 @@ void check_and_flash_update_image(void)
 	flash_read_jedecid(); // This initializes also __xdata flash_size variable
 
 	print_string(get_flash_size_str()); print_string(" flash size detected. (1 MB is needed for image updating)\n");
-	/* DEBUG BUILD: if 0x80000 of the leftover stock image happened to start
-	 * with 00 40, the check below would move 1MB of junk over the running
-	 * image and reset -> brick. Skip it while debugging. */
+	/* DEBUG BUILD: never let a garbage flash-status reading trigger an image
+	 * copy. If 0x80000 of the leftover stock firmware happened to start with
+	 * 00 40, the original code would move 1MB of junk over the running image
+	 * and reset -> brick. Remove this block once the flash issue is fixed. */
 	print_string("[D2b:update-check SKIPPED]\n");
 	return;
 	if (flash_size < FIRMWARE_UPLOAD_START*2) {
@@ -2077,7 +2078,6 @@ void main(void)
 	// See this issue: https://github.com/logicog/RTLPlayground/issues/70
 	print_string("\nInitializing Flash controller\n");
 	flash_init(1);
-	flash_diag();
 
 	// Set default for SFP pins so we can start up a module already inserted
 	sfp_pins_last = 0x33; // signal LOS and no module inserted (for both slots, even if only 1 present)
