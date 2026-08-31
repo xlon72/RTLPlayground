@@ -1933,6 +1933,12 @@ void check_and_flash_update_image(void)
 	flash_read_jedecid(); // This initializes also __xdata flash_size variable
 
 	print_string(get_flash_size_str()); print_string(" flash size detected. (1 MB is needed for image updating)\n");
+	/* DEBUG BUILD: never let a garbage flash-status reading trigger an image
+	 * copy. If 0x80000 of the leftover stock firmware happened to start with
+	 * 00 40, the original code would move 1MB of junk over the running image
+	 * and reset -> brick. Remove this block once the flash issue is fixed. */
+	print_string("[D2b:update-check SKIPPED]\n");
+	return;
 	if (flash_size < FIRMWARE_UPLOAD_START*2) {
 		print_string("Flash too small for updating; skipping update check\n");
 		return;
@@ -2162,11 +2168,15 @@ void main(void)
 		rtl8373_init();
 	else
 		rtl8372_init();
+	print_string("[D1]");
 	delay(1000);
+	print_string("[D2]");
 
 	check_and_flash_update_image();
+	print_string("[D3]");
 
 	syslog_init();
+	print_string("[D4]");
 
 #ifdef DEBUG
 	// This register seems to work on the RTL8373 only if also the SDS
@@ -2186,19 +2196,29 @@ void main(void)
 	print_reg(RTL837X_REG_SEC_COUNTER);
 #endif
 	stpEnabled = 0;
+	print_string("[D5]");
 	nic_setup();
+	print_string("[D6]");
 	vlan_setup();
+	print_string("[D7]");
 	port_l2_setup();
+	print_string("[D8]");
 	igmp_setup();
+	print_string("[D9]");
 	bandwidth_setup();
+	print_string("[DA]");
 	uip_init();
 	uip_arp_init();
+	print_string("[DB]");
 	httpd_init();
+	print_string("[DC]");
 
 	management_vlan = 1; // Default management VLAN is 1
 
 	setup_i2c();
+	print_string("[DD]");
 	setup_sfp_gpio();
+	print_string("[DE]");
 	print_string(greeting);
 
 	print_string("\nClock register: ");
