@@ -23,7 +23,7 @@ jobs:
         run: make machine_check
 
       - name: Build firmware
-        run: make MACHINE="FG_4GT_2SX_V2_0"
+        run: make MACHINE="KP_9000_6XH_X2"
 
       - name: Upload firmware
         uses: actions/upload-artifact@v4
