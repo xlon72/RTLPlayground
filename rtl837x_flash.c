@@ -104,14 +104,13 @@ uint8_t flash_read_status(void)
 		if (!++t) { print_string("[FS:EBUSY2]"); return 0xff; }
 	}
 
-	{
-		uint8_t r = SFR_FLASH_DATA0;
-		/* This command clobbers CMD_R. If MMIO instruction fetch shares it,
-		 * leaving 0x05 behind corrupts code execution right after we return.
-		 * Restore unconditionally. */
-		flash_configure_mmio();
-		return r;
-	}
+	/* This command clobbers CMD_R. If MMIO instruction fetch shares it,
+	 * leaving 0x05 behind would corrupt code fetch right after we return, so
+	 * restore the read command. flash_configure_mmio() only writes MODEB /
+	 * CMD_R / DUMMYCYCLES and never touches DATA0, so reading the result
+	 * afterwards is safe -- and saves a byte of the 128 bytes of internal RAM. */
+	flash_configure_mmio();
+	return SFR_FLASH_DATA0;
 }
 
 
@@ -192,7 +191,10 @@ void flash_read_jedecid(void)
 	SFR_FLASH_TCONF = 0x13;
 
 	SFR_FLASH_EXEC_GO = 1;
-	while(SFR_FLASH_EXEC_BUSY);
+	i = 0;
+	while(SFR_FLASH_EXEC_BUSY) {
+		if (!++i) { print_string("[JED:EXEC-TIMEOUT]"); break; }
+	}
 
 	print_string("Flash information:\n");
 	print_string("  Manufacturer ID: 0x");
@@ -386,84 +388,93 @@ void flash_write_bytes(__xdata uint8_t *ptr)
 /* ------------------------------------------------------------------
  * DEBUG: standalone flash controller / SPI chip diagnostics.
  *
- * Called right after flash_init() from main(). Every controller wait here is
- * bounded, so a dead, miswired or 5V-damaged chip reports a value instead of
- * hanging the boot with zero output.
+ * Runs right after flash_init() from main() and reports the health of the
+ * flash controller and the SPI chip instead of letting a dead, miswired or
+ * overvolted chip hang the boot with zero output.
  *
- * CAREFUL: the CPU executes (XIP) out of this very flash through MMIO, so any
- * change to MODEB / CMD_R / DUMMYCYCLES must be undone before anything that
- * fetches code -- notably before calling print_* which may live in another
- * code bank. The helpers below therefore stash their result and call
- * flash_configure_mmio() *before* returning; printing happens after.
+ * RAM NOTE: the 8051 has only 128 bytes of internal RAM and the overlay
+ * segment (OSEG) was already full -- adding this with ordinary locals made
+ * the link fail with
+ *     ?ASlink-Error-Could not get N consecutive bytes in internal RAM
+ * So every piece of state here lives in XRAM and no helper takes pointer
+ * parameters. Internal RAM cost of this whole block: zero.
+ *
+ * XIP NOTE: the CPU executes out of this very flash through MMIO, so any
+ * change to MODEB / CMD_R / DUMMYCYCLES must be undone before returning.
+ * The helpers below restore MMIO *before* returning; all printing happens
+ * afterwards, from the caller.
  *
  * Self-contained on purpose: uses its own status read rather than
- * flash_read_status(), so it still works if that one is the thing that is
- * broken.
+ * flash_read_status(), so it still works if that one is the thing broken.
  * ------------------------------------------------------------------ */
 
-static uint8_t fdig_status(void)
-{
-	uint16_t t = 0;
-	uint8_t r;
+__xdata static uint8_t	fd_st;			/* last status / error flag */
+__xdata static uint8_t	fd_mid, fd_typ, fd_cap;	/* last RDID bytes */
+__xdata static uint16_t	fd_t;			/* timeout counter */
+__xdata static uint8_t	fd_i;			/* loop counter */
 
-	while (SFR_FLASH_EXEC_BUSY)
-		if (!++t) return 0xff;
+
+/* Read the status register; result in fd_st (0xff = controller timeout). */
+static void fdig_status(void)
+{
+	fd_t = 0;
+	while (SFR_FLASH_EXEC_BUSY) {
+		if (!++fd_t) { fd_st = 0xff; return; }
+	}
 
 	SFR_FLASH_TCONF = 0x11;
 	SFR_FLASH_CMD_R = CMD_READ_STATUS;
 	SFR_FLASH_EXEC_GO = 1;
 
-	t = 0;
-	while (SFR_FLASH_EXEC_BUSY)
-		if (!++t) return 0xff;
+	fd_t = 0;
+	while (SFR_FLASH_EXEC_BUSY) {
+		if (!++fd_t) { fd_st = 0xff; flash_configure_mmio(); return; }
+	}
 
-	r = SFR_FLASH_DATA0;
+	fd_st = SFR_FLASH_DATA0;
 	flash_configure_mmio();
-	return r;
 }
 
 
-/* Raw 3-byte JEDEC RDID (9Fh) in the requested mode; 0 on timeout. */
-static uint8_t fdig_rdid(uint8_t *mid, uint8_t *typ, uint8_t *cap, uint8_t dio)
+/* Raw 3-byte JEDEC RDID (9Fh). dio=1 -> dual mode (0xbb), else single (0x0b).
+ * Result in fd_mid/fd_typ/fd_cap; fd_st = 1 on success, 0 on timeout. */
+static void fdig_rdid(uint8_t dio)
 {
-	uint16_t t = 0;
+	fd_t = 0;
+	while (SFR_FLASH_EXEC_BUSY) {
+		if (!++fd_t) { fd_st = 0; return; }
+	}
 
-	while (SFR_FLASH_EXEC_BUSY)
-		if (!++t) return 0;
+	if (dio) {
+		SFR_FLASH_MODEB = 0x18;
+		SFR_FLASH_CMD_R = CMD_FREAD_DIO;
+		SFR_FLASH_DUMMYCYCLES = 4;
+	} else {
+		SFR_FLASH_MODEB = 0x0;
+		SFR_FLASH_CMD_R = CMD_FREAD;
+		SFR_FLASH_DUMMYCYCLES = 8;
+	}
 
-	SFR_FLASH_MODEB = dio ? 0x18 : 0x00;
-	SFR_FLASH_CMD_R = dio ? CMD_FREAD_DIO : CMD_FREAD;
-	SFR_FLASH_DUMMYCYCLES = dio ? 4 : 8;
-
-	SFR_FLASH_TCONF = 0x13;		// 1 command byte out, 3 id bytes in
+	/* 1 command byte out, 3 id bytes in */
+	SFR_FLASH_TCONF = 0x13;
 	SFR_FLASH_EXEC_GO = 1;
 
-	t = 0;
-	while (SFR_FLASH_EXEC_BUSY)
-		if (!++t) { flash_configure_mmio(); return 0; }
+	fd_t = 0;
+	while (SFR_FLASH_EXEC_BUSY) {
+		if (!++fd_t) { fd_st = 0; flash_configure_mmio(); return; }
+	}
 
-	*mid = SFR_FLASH_DATA0;
-	*typ = SFR_FLASH_DATA8;
-	*cap = SFR_FLASH_DATA16;
+	fd_mid = SFR_FLASH_DATA0;
+	fd_typ = SFR_FLASH_DATA8;
+	fd_cap = SFR_FLASH_DATA16;
 
-	flash_configure_mmio();		// restore XIP timing before returning
-	return 1;
-}
-
-
-static void fdig_print_id(uint8_t mid, uint8_t typ, uint8_t cap)
-{
-	print_string(" 0x"); print_byte(mid);
-	print_string(" 0x"); print_byte(typ);
-	print_string(" 0x"); print_byte(cap);
-	write_char('\n');
+	flash_configure_mmio();		/* restore XIP timing before returning */
+	fd_st = 1;
 }
 
 
 void flash_diag(void)
 {
-	uint8_t i, st, mid, typ, cap;
-
 	print_string("\n[FLASH-DIAG] controller:");
 	print_string(" cfg=0x"); print_byte(SFR_FLASH_CONFIG);
 	print_string(" div=0x"); print_byte(SFR_FLASH_CONF_DIV);
@@ -474,36 +485,46 @@ void flash_diag(void)
 	write_char('\n');
 
 	print_string("[FLASH-DIAG] status x4:");
-	for (i = 0; i < 4; i++) {
-		st = fdig_status();
-		print_string(" 0x"); print_byte(st);
+	for (fd_i = 0; fd_i < 4; fd_i++) {
+		fdig_status();
+		print_string(" 0x"); print_byte(fd_st);
 	}
 	write_char('\n');
-	if (st == 0xff)
+
+	if (fd_st == 0xff)
 		print_string("[FLASH-DIAG] !! 0xff = MISO idle high, chip not answering\n");
-	else if (st & 0x01)
+	else if (fd_st & 0x01)
 		print_string("[FLASH-DIAG] !! WIP stuck high, chip never completes\n");
-	else if (st & 0x02)
+	else if (fd_st & 0x02)
 		print_string("[FLASH-DIAG] note: WEL already set\n");
 	else
-		print_string("[FLASH-DIAG] status looks idle, SPI link is up\n");
+		print_string("[FLASH-DIAG] status idle, SPI link up\n");
 
 	print_string("[FLASH-DIAG] rdid(dio):");
-	if (fdig_rdid(&mid, &typ, &cap, 1))
-		fdig_print_id(mid, typ, cap);
-	else
+	fdig_rdid(1);
+	if (fd_st) {
+		print_string(" 0x"); print_byte(fd_mid);
+		print_string(" 0x"); print_byte(fd_typ);
+		print_string(" 0x"); print_byte(fd_cap);
+		write_char('\n');
+	} else
 		print_string(" TIMEOUT\n");
 
 	print_string("[FLASH-DIAG] rdid(single):");
-	if (fdig_rdid(&mid, &typ, &cap, 0)) {
-		fdig_print_id(mid, typ, cap);
-		if (mid == 0x5e && typ == 0x60 && cap == 0x15)
+	fdig_rdid(0);
+	if (fd_st) {
+		print_string(" 0x"); print_byte(fd_mid);
+		print_string(" 0x"); print_byte(fd_typ);
+		print_string(" 0x"); print_byte(fd_cap);
+		write_char('\n');
+
+		if (fd_mid == 0x5e && fd_typ == 0x60 && fd_cap == 0x15)
 			print_string("[FLASH-DIAG] HX25Q16 id OK (5e 60 15)\n");
-		else if (mid == 0x0e && typ == 0x40 && cap == 0x15)
-			print_string("[FLASH-DIAG] id is 0e 40 15 (datasheet says 5e 60 15)\n");
-		else if (mid == 0xff)
+		else if (fd_mid == 0x0e && fd_typ == 0x40 && fd_cap == 0x15)
+			print_string("[FLASH-DIAG] id 0e 40 15 (datasheet says 5e 60 15)\n");
+		else if (fd_mid == 0xff)
 			print_string("[FLASH-DIAG] !! all-ff: no chip response\n");
-		else if (mid == 0x00)
+		else if (fd_mid == 0x00)
 			print_string("[FLASH-DIAG] !! all-00: MISO held low / shorted\n");
 		else
 			print_string("[FLASH-DIAG] unexpected id\n");
