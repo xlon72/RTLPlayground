@@ -90,7 +90,7 @@ uint8_t flash_read_status(void)
 	// Test Controller Busy (we might call this directly after executing a command)
 	t = 0;
 	while(SFR_FLASH_EXEC_BUSY) {
-		if (!++t) { print_string("[FS:EBUSY1]"); break; }
+		if (!++t) { print_string("[FS:EBUSY1]"); return 0xff; }
 	}
 
 	// setup status read command
@@ -101,10 +101,17 @@ uint8_t flash_read_status(void)
 	SFR_FLASH_EXEC_GO = 1;
 	t = 0;
 	while(SFR_FLASH_EXEC_BUSY) {
-		if (!++t) { print_string("[FS:EBUSY2]"); break; }
+		if (!++t) { print_string("[FS:EBUSY2]"); return 0xff; }
 	}
 
-	return SFR_FLASH_DATA0;
+	{
+		uint8_t r = SFR_FLASH_DATA0;
+		/* This command clobbers CMD_R. If MMIO instruction fetch shares it,
+		 * leaving 0x05 behind corrupts code execution right after we return.
+		 * Restore unconditionally. */
+		flash_configure_mmio();
+		return r;
+	}
 }
 
 
@@ -163,21 +170,16 @@ void flash_read_jedecid(void)
 	uint16_t i = 0;
 	uint8_t st;
 
-	/* DEBUG: bounded wait. The unconditional spin of the original code
-	 * produced no output at all, which is exactly the observed hang. */
+	/* Bounded: the original unconditional spin produced no output at all. */
 	do {
 		st = flash_read_status();
 		if (!(st & 0x1))
 			break;
-		if (!(i & 0xfff)) {
-			print_string("[JED:busy st=");
-			print_byte(st);
-			write_char(']');
-		}
+		if (!(i & 0x3f))
+			print_string("[JED:busy]");
 	} while (++i);
 	if (st & 0x1) {
-		print_string("[JED:TIMEOUT st=");
-		print_byte(st);
+		print_string("[JED:TIMEOUT st=0x"); print_byte(st);
 		print_string("]\n");
 	}
 
@@ -199,8 +201,8 @@ void flash_read_jedecid(void)
 	print_byte(SFR_FLASH_DATA8);
 	print_string("\n  Capacity:        0x");
 	flash_capacity_code = SFR_FLASH_DATA16;
-	// Guard against a bogus capacity byte (e.g. 0xff when MISO reads high):
-	// fall back to 2 MB (HX25Q16) instead of shifting by an absurd amount.
+	// A bogus capacity byte (0xff when MISO reads idle high) would make
+	// flash_size garbage; fall back to 2 MB (HX25Q16) instead.
 	if (flash_capacity_code < 0x12 || flash_capacity_code > 0x18)
 		flash_capacity_code = 0x15;
 	flash_size = 1UL << flash_capacity_code;
@@ -379,4 +381,134 @@ void flash_write_bytes(__xdata uint8_t *ptr)
 	};
 	while (flash_read_status() & 0x1);
 	flash_configure_mmio();
+}
+
+/* ------------------------------------------------------------------
+ * DEBUG: standalone flash controller / SPI chip diagnostics.
+ *
+ * Called right after flash_init() from main(). Every controller wait here is
+ * bounded, so a dead, miswired or 5V-damaged chip reports a value instead of
+ * hanging the boot with zero output.
+ *
+ * CAREFUL: the CPU executes (XIP) out of this very flash through MMIO, so any
+ * change to MODEB / CMD_R / DUMMYCYCLES must be undone before anything that
+ * fetches code -- notably before calling print_* which may live in another
+ * code bank. The helpers below therefore stash their result and call
+ * flash_configure_mmio() *before* returning; printing happens after.
+ *
+ * Self-contained on purpose: uses its own status read rather than
+ * flash_read_status(), so it still works if that one is the thing that is
+ * broken.
+ * ------------------------------------------------------------------ */
+
+static uint8_t fdig_status(void)
+{
+	uint16_t t = 0;
+	uint8_t r;
+
+	while (SFR_FLASH_EXEC_BUSY)
+		if (!++t) return 0xff;
+
+	SFR_FLASH_TCONF = 0x11;
+	SFR_FLASH_CMD_R = CMD_READ_STATUS;
+	SFR_FLASH_EXEC_GO = 1;
+
+	t = 0;
+	while (SFR_FLASH_EXEC_BUSY)
+		if (!++t) return 0xff;
+
+	r = SFR_FLASH_DATA0;
+	flash_configure_mmio();
+	return r;
+}
+
+
+/* Raw 3-byte JEDEC RDID (9Fh) in the requested mode; 0 on timeout. */
+static uint8_t fdig_rdid(uint8_t *mid, uint8_t *typ, uint8_t *cap, uint8_t dio)
+{
+	uint16_t t = 0;
+
+	while (SFR_FLASH_EXEC_BUSY)
+		if (!++t) return 0;
+
+	SFR_FLASH_MODEB = dio ? 0x18 : 0x00;
+	SFR_FLASH_CMD_R = dio ? CMD_FREAD_DIO : CMD_FREAD;
+	SFR_FLASH_DUMMYCYCLES = dio ? 4 : 8;
+
+	SFR_FLASH_TCONF = 0x13;		// 1 command byte out, 3 id bytes in
+	SFR_FLASH_EXEC_GO = 1;
+
+	t = 0;
+	while (SFR_FLASH_EXEC_BUSY)
+		if (!++t) { flash_configure_mmio(); return 0; }
+
+	*mid = SFR_FLASH_DATA0;
+	*typ = SFR_FLASH_DATA8;
+	*cap = SFR_FLASH_DATA16;
+
+	flash_configure_mmio();		// restore XIP timing before returning
+	return 1;
+}
+
+
+static void fdig_print_id(uint8_t mid, uint8_t typ, uint8_t cap)
+{
+	print_string(" 0x"); print_byte(mid);
+	print_string(" 0x"); print_byte(typ);
+	print_string(" 0x"); print_byte(cap);
+	write_char('\n');
+}
+
+
+void flash_diag(void)
+{
+	uint8_t i, st, mid, typ, cap;
+
+	print_string("\n[FLASH-DIAG] controller:");
+	print_string(" cfg=0x"); print_byte(SFR_FLASH_CONFIG);
+	print_string(" div=0x"); print_byte(SFR_FLASH_CONF_DIV);
+	print_string(" rcmd=0x"); print_byte(SFR_FLASH_CONF_RCMD);
+	print_string(" modeb=0x"); print_byte(SFR_FLASH_MODEB);
+	print_string(" dummy=0x"); print_byte(SFR_FLASH_DUMMYCYCLES);
+	print_string(" dio="); write_char('0' + (dio_enabled & 1));
+	write_char('\n');
+
+	print_string("[FLASH-DIAG] status x4:");
+	for (i = 0; i < 4; i++) {
+		st = fdig_status();
+		print_string(" 0x"); print_byte(st);
+	}
+	write_char('\n');
+	if (st == 0xff)
+		print_string("[FLASH-DIAG] !! 0xff = MISO idle high, chip not answering\n");
+	else if (st & 0x01)
+		print_string("[FLASH-DIAG] !! WIP stuck high, chip never completes\n");
+	else if (st & 0x02)
+		print_string("[FLASH-DIAG] note: WEL already set\n");
+	else
+		print_string("[FLASH-DIAG] status looks idle, SPI link is up\n");
+
+	print_string("[FLASH-DIAG] rdid(dio):");
+	if (fdig_rdid(&mid, &typ, &cap, 1))
+		fdig_print_id(mid, typ, cap);
+	else
+		print_string(" TIMEOUT\n");
+
+	print_string("[FLASH-DIAG] rdid(single):");
+	if (fdig_rdid(&mid, &typ, &cap, 0)) {
+		fdig_print_id(mid, typ, cap);
+		if (mid == 0x5e && typ == 0x60 && cap == 0x15)
+			print_string("[FLASH-DIAG] HX25Q16 id OK (5e 60 15)\n");
+		else if (mid == 0x0e && typ == 0x40 && cap == 0x15)
+			print_string("[FLASH-DIAG] id is 0e 40 15 (datasheet says 5e 60 15)\n");
+		else if (mid == 0xff)
+			print_string("[FLASH-DIAG] !! all-ff: no chip response\n");
+		else if (mid == 0x00)
+			print_string("[FLASH-DIAG] !! all-00: MISO held low / shorted\n");
+		else
+			print_string("[FLASH-DIAG] unexpected id\n");
+	} else
+		print_string(" TIMEOUT\n");
+
+	print_string("[FLASH-DIAG] done\n");
 }
