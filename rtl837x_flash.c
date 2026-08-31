@@ -85,8 +85,13 @@ void flash_init(uint8_t enable_dio)
 
 uint8_t flash_read_status(void)
 {
+	uint16_t t;
+
 	// Test Controller Busy (we might call this directly after executing a command)
-	while(SFR_FLASH_EXEC_BUSY);
+	t = 0;
+	while(SFR_FLASH_EXEC_BUSY) {
+		if (!++t) { print_string("[FS:EBUSY1]"); break; }
+	}
 
 	// setup status read command
 	SFR_FLASH_TCONF = 0x11;
@@ -94,7 +99,10 @@ uint8_t flash_read_status(void)
 
 	// execute and wait for controller done
 	SFR_FLASH_EXEC_GO = 1;
-	while(SFR_FLASH_EXEC_BUSY);
+	t = 0;
+	while(SFR_FLASH_EXEC_BUSY) {
+		if (!++t) { print_string("[FS:EBUSY2]"); break; }
+	}
 
 	return SFR_FLASH_DATA0;
 }
@@ -152,7 +160,26 @@ __code char* get_flash_size_str(void)
 
 void flash_read_jedecid(void)
 {
-	while (flash_read_status() & 0x1);
+	uint16_t i = 0;
+	uint8_t st;
+
+	/* DEBUG: bounded wait. The unconditional spin of the original code
+	 * produced no output at all, which is exactly the observed hang. */
+	do {
+		st = flash_read_status();
+		if (!(st & 0x1))
+			break;
+		if (!(i & 0xfff)) {
+			print_string("[JED:busy st=");
+			print_byte(st);
+			write_char(']');
+		}
+	} while (++i);
+	if (st & 0x1) {
+		print_string("[JED:TIMEOUT st=");
+		print_byte(st);
+		print_string("]\n");
+	}
 
 	// Set read mode for JEDEC ID
 	SFR_FLASH_MODEB = 0x0;
@@ -172,6 +199,10 @@ void flash_read_jedecid(void)
 	print_byte(SFR_FLASH_DATA8);
 	print_string("\n  Capacity:        0x");
 	flash_capacity_code = SFR_FLASH_DATA16;
+	// Guard against a bogus capacity byte (e.g. 0xff when MISO reads high):
+	// fall back to 2 MB (HX25Q16) instead of shifting by an absurd amount.
+	if (flash_capacity_code < 0x12 || flash_capacity_code > 0x18)
+		flash_capacity_code = 0x15;
 	flash_size = 1UL << flash_capacity_code;
 	print_byte(flash_capacity_code);
 	print_string(" = "); print_string(get_flash_size_str()); write_char('\n');
@@ -213,9 +244,13 @@ void flash_write_enable(void)
 void flash_read_bulk(__xdata uint8_t *dst)
 {
 	short status;
+	uint16_t i = 0;
 	do {
 		status = flash_read_status();
-	} while (status & 0x1);
+		if (!(status & 0x1))
+			break;
+		if (!++i) { print_string("[BULK:BUSY]"); break; }
+	} while (1);
 
 	// Set fast read mode
 	if (dio_enabled) {
