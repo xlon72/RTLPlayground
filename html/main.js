@@ -2,6 +2,8 @@ var txG = new BigInt64Array(10);
 var txB = new BigInt64Array(10);
 var rxG = new BigInt64Array(10);
 var rxB = new BigInt64Array(10);
+var txBytes = new BigInt64Array(10);
+var rxBytes = new BigInt64Array(10);
 const linkS = [function(){return t('speed_disabled')}, function(){return t('speed_down')}, "10M", "100M", "1000M", "500M", "10G", "2.5G", "5G"];
 var pState = new Int8Array(10);
 var pIsSFP = new Int8Array(10);
@@ -143,6 +145,7 @@ function update(callback) {
 	let ttid = "tt_" + n;
 	n--;
 	txG[n] = BigInt(p.txG); txB[n] = BigInt(p.txB); rxG[n] = BigInt(p.rxG); rxB[n] = BigInt(p.rxB);
+	txBytes[n] = BigInt(p.txBytes); rxBytes[n] = BigInt(p.rxBytes);
 	var psvg = document.getElementById(pid);
 	var tt = document.getElementById(ttid);
 	if (psvg == null || !psvg.contentDocument)

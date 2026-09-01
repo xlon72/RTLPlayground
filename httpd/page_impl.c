@@ -778,6 +778,18 @@ void send_status(void)
 		slen += strtox(outbuf + slen, "\",\"rxB\":\"0x");
 		STAT_GET(STAT_COUNTER_ERR_PKTS, i);
 		reg_to_html(RTL837X_STAT_V_HIGH);	// 32bit RX packet errors
+
+		// Byte counters for the dashboard: txBytes = ifOutOctets,
+		// rxBytes = ifInOctets
+		slen += strtox(outbuf + slen, "\",\"txBytes\":\"0x");
+		STAT_GET(STAT_COUNTER_TX_BYTES, i);
+		reg_to_html(RTL837X_STAT_V_HIGH);
+		reg_to_html(RTL837X_STAT_V_LOW);
+
+		slen += strtox(outbuf + slen, "\",\"rxBytes\":\"0x");
+		STAT_GET(STAT_COUNTER_RX_BYTES, i);
+		reg_to_html(RTL837X_STAT_V_HIGH);
+		reg_to_html(RTL837X_STAT_V_LOW);
 		slen += strtox(outbuf + slen, "\"}");
 		if (i < machine.max_port)
 			char_to_html(',');
