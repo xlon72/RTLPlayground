@@ -40,6 +40,11 @@ function drawPorts() {
       l.height = "60";
     }
     l.id="port" + (i+1);
+    const ps = document.createElement("div");
+    ps.classList.add("port-status");
+    ps.id = "ps_" + (i+1);
+    ps.textContent = "\u2013";
+    d.appendChild(ps);
     f.appendChild(d);
   }
 }
@@ -165,6 +170,8 @@ function update(callback) {
 	  iHTML += "<tr><td align=\"left\">" + t('port_status') + "</td><td>:</td><td>" + t('port_not_enabled') + "</td></tr>";
 	  iHTML += "</table>";
 	  tt.innerHTML = iHTML;
+	  var psEl2 = document.getElementById("ps_" + (n+1));
+	  if (psEl2) { psEl2.textContent = t('speed_disabled'); psEl2.className = "port-status port-down"; }
 	} else {
 	  psvg.style.opacity = 1.0;
 	  pState[n] = p.link;
@@ -179,6 +186,11 @@ function update(callback) {
 	    psvg.style.opacity = 0.4
 	  }
 	  iHTML += "<tr><td align=\"left\">" + t('port_link_speed') + "</td><td>:</td><td>" + linkText(p.link + 1) + "</td></tr>";
+	  var psEl = document.getElementById("ps_" + (n+1));
+	  if (psEl) {
+	    psEl.textContent = linkText(p.link + 1);
+	    psEl.className = p.link > 0 ? "port-status port-up" : "port-status port-down";
+	  }
 	  if (p.isSFP) {
 	    pAdvertised[n] = 0;
 	    const hasExtendedStatus = p.sfp_options & 0x40;

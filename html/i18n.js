@@ -203,6 +203,7 @@ var LANG = {
     info_flash_size: 'Flash Size',
     info_sfp0: 'SFP Slot 1',
     info_sfp1: 'SFP Slot 2',
+    info_hostname: 'Hostname',
   },
 
   ja: {
@@ -409,6 +410,7 @@ var LANG = {
     info_flash_size: 'フラッシュ容量',
     info_sfp0: 'SFP スロット1',
     info_sfp1: 'SFP スロット2',
+    info_hostname: 'ホスト名',
   },
 
   zh: {
@@ -706,6 +708,7 @@ var LANG = {
       "RX Error Counter PHY": "RX 错误计数 PHY",
       "TX Error Counter PHY": "TX 错误计数 PHY",
     },
+    info_hostname: '主机名',
   }
 };
 
@@ -750,8 +753,12 @@ function applyTranslation(el) {
   }
 }
 
-document.addEventListener('DOMContentLoaded', function() {
+function translateAll() {
   document.querySelectorAll('[data-i18n], [data-i18n-placeholder]').forEach(function(el) {
     applyTranslation(el);
   });
-});
+}
+
+translateAll();
+document.addEventListener('DOMContentLoaded', translateAll);
+window.addEventListener('load', translateAll);

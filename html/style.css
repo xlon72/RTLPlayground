@@ -533,3 +533,14 @@ form .txt_field { position: relative; border-bottom: 2px solid rgba(0, 0, 0, 0.1
 .txt_field input:valid ~ label { top: -9px; color: var(--accent); font-size: 13px; }
 .center input[type=submit] { margin-bottom: 0; padding: 14px; font-size: 15px; width: 100%; }
 #incorrect { color: var(--nok); text-align: center; margin-top: 20px; font-size: 14px; font-weight: 500; }
+
+/* Per-port link status shown under each port icon */
+.port-status {
+  text-align: center;
+  font-size: 0.72rem;
+  margin-top: 2px;
+  color: #6b7280;
+  white-space: nowrap;
+}
+.port-status.port-up { color: #16a34a; font-weight: 600; }
+.port-status.port-down { color: #9ca3af; }
