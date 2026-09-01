@@ -1928,10 +1928,10 @@ void setup_i2c(void)
 }
 
 
-/* Bank 0 only holds 16 KB and is full. This runs once at boot and is called
- * from main() in bank 0, so it is banked; everything it calls
- * (flash_read_bulk, flash_sector_erase, crc16, print_string, reset_chip) lives
- * in HOME and is reachable with a plain call from any bank. */
+/* Bank 0 holds only 16 KB and is full, so this runs from BANK2 and is called
+ * banked from main(). Everything it calls (flash_read_bulk,
+ * flash_sector_erase, flash_init, crc16, print_string, reset_chip,
+ * set_sys_led_state) lives in HOME, reachable with a plain call. */
 #pragma codeseg BANK2
 #pragma constseg BANK2
 

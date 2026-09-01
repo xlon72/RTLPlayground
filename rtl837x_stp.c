@@ -14,6 +14,16 @@
 #include "uip.h"
 #include "machine.h"
 
+/* The public entry points are declared __banked in rtl837x_stp.h, but this
+ * file never asked for a banked code segment -- so all of this landed in
+ * bank 0, which only holds 16 KB and is full. Bank 1/2 hold 48 KB each.
+ * Everything in here is self-contained: no statics, no globals, and the two
+ * helpers (cmpMAC, stp_cnf_send) are used only from this file. Callers live
+ * in cmd_parser.c (BANK2) and rtlplayground.c (HOME) and already reach these
+ * through the __banked declarations, so nothing else has to change. */
+#pragma codeseg BANK2
+#pragma constseg BANK2
+
 extern __code struct machine machine;
 extern __xdata uint8_t sfr_data[4];
 
