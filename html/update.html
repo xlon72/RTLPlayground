@@ -2,19 +2,221 @@
 <html>
   <head>
     <script src="/i18n.js"></script>
+    <script src="/md5.js"></script>
     <link rel="stylesheet" href="style.css">
     <title data-i18n="update_title">Firmware update</title>
+    <style>
+      .fw-current { margin-bottom: 1.5em; }
+      .fw-current td { padding: 2px 12px 2px 0; }
+      .fw-current td.k { color: var(--text-dim, #6b7280); }
+      .fw-progress-wrap {
+        height: 8px; background: #e5e7eb; border-radius: 4px;
+        overflow: hidden; margin: 0.8em 0; display: none;
+      }
+      .fw-progress-wrap.on { display: block; }
+      .fw-progress { height: 100%; width: 0%; background: var(--accent, #6d28d9); transition: width .2s; }
+      .fw-info { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-top: 1em; display: none; }
+      .fw-info.on { display: block; }
+      .fw-info td { padding: 3px 12px 3px 0; font-family: ui-monospace, monospace; font-size: 0.9em; }
+      .fw-info td.k { font-family: inherit; color: var(--text-dim, #6b7280); }
+      .fw-ok { color: #16a34a; font-weight: 600; }
+      .fw-bad { color: #dc2626; font-weight: 600; }
+      .fw-actions { margin-top: 1.5em; }
+      .fw-modal-mask {
+        position: fixed; inset: 0; background: rgba(0,0,0,.45);
+        display: none; align-items: center; justify-content: center; z-index: 50;
+      }
+      .fw-modal-mask.on { display: flex; }
+      .fw-modal {
+        background: #fff; border-radius: 12px; padding: 20px; width: 380px;
+        box-shadow: 0 10px 30px rgba(0,0,0,.25);
+      }
+      .fw-modal h3 { margin: 0 0 10px; font-size: 1.05em; }
+      .fw-modal p { margin: 0 0 12px; color: var(--text-dim, #6b7280); font-size: 0.9em; }
+      .fw-modal input[type=text] { width: 100%; padding: 8px; box-sizing: border-box; }
+      .fw-modal-actions { margin-top: 14px; display: flex; gap: 8px; justify-content: flex-end; }
+    </style>
   </head>
   <body>
     <nav id="sidebar"></nav>
-    <div style="margin-left:16%;padding:1px 16px;height:1000px;width:40%;">
-    <h1 data-i18n="update_heading">Firmware Update</h1>
-    <form enctype="multipart/form-data" action="/upload" method="POST">
-    <input type="hidden" name="MAX_FILE_SIZE" value="1000000" />
-      <span data-i18n="update_instruction">Choose a firmware update file to upload:</span> <br/> <br/>
-      <input name="uploadedfile" type="file" accept=".bin" /><br />
-    <input style="margin-top:3em" type="submit" data-i18n="update_upload" value="Upload File" />
-    </form>
+    <div style="margin-left:16%;padding:1px 16px;">
+      <h1 data-i18n="update_heading">Firmware Update</h1>
+
+      <div class="fw-current">
+        <table>
+          <tr><td class="k" data-i18n="update_cur_sw">Current software:</td><td id="cur-sw">–</td></tr>
+          <tr><td class="k" data-i18n="update_cur_build">Build date:</td><td id="cur-build">–</td></tr>
+          <tr><td class="k" data-i18n="update_cur_hw">Hardware:</td><td id="cur-hw">–</td></tr>
+        </table>
+      </div>
+
+      <div class="card">
+        <span data-i18n="update_instruction">Choose a firmware update file to upload:</span><br/><br/>
+        <input id="fwfile" name="uploadedfile" type="file" accept=".bin" /><br/>
+        <div class="fw-progress-wrap" id="prog-wrap"><div class="fw-progress" id="prog"></div></div>
+        <input style="margin-top:1em" type="button" id="btn-upload" value="Upload File" data-i18n="update_upload" />
+      </div>
+
+      <div class="fw-info" id="fw-info">
+        <table>
+          <tr><td class="k" data-i18n="update_new_ver">Image version:</td><td id="fw-ver">–</td></tr>
+          <tr><td class="k" data-i18n="update_size">Size:</td><td id="fw-size">–</td></tr>
+          <tr><td class="k" data-i18n="update_md5">MD5:</td><td id="fw-md5">–</td></tr>
+          <tr><td class="k" data-i18n="update_size_check">Size check:</td><td id="fw-check">–</td></tr>
+        </table>
+      </div>
+
+      <div class="fw-actions">
+        <input type="button" id="btn-flash" value="Start Flashing" data-i18n="update_start_flash" disabled />
+      </div>
+    </div>
+
+    <div class="fw-modal-mask" id="mask">
+      <div class="fw-modal">
+        <h3 data-i18n="update_confirm_title">Flash this firmware?</h3>
+        <p data-i18n="update_confirm_hint">Type yes to start flashing. Pressing Enter with anything else cancels.</p>
+        <input type="text" id="yes-input" autocomplete="off" spellcheck="false"
+               data-i18n-placeholder="update_yes_placeholder" placeholder="输入 yes 开始刷写" />
+        <div class="fw-modal-actions">
+          <input type="button" id="btn-cancel" value="Cancel" data-i18n="update_cancel" />
+          <input type="button" id="btn-go" value="Start Flashing" data-i18n="update_confirm_btn" />
+        </div>
+      </div>
+    </div>
+
     <script src="/navigation.js"></script>
+    <script>
+    (function () {
+      var EXPECT = 524288;   /* Makefile IMAGESIZE */
+      var picked = null;
+      var uploadedOK = false;
+      var busy = false;
+
+      function $(id) { return document.getElementById(id); }
+      function txt(id, v) { var e = $(id); if (e) e.textContent = v; }
+
+      function loadCurrent() {
+        var x = new XMLHttpRequest();
+        x.onreadystatechange = function () {
+          if (this.readyState !== 4 || this.status !== 200) return;
+          try {
+            var d = JSON.parse(this.responseText);
+            txt('cur-sw', d.sw_ver || '–');
+            txt('cur-build', d.build_date || '–');
+            txt('cur-hw', d.hw_ver || '–');
+          } catch (e) {}
+        };
+        x.open('GET', '/information.json', true);
+        x.send();
+      }
+
+      function findVersion(bytes) {
+        var pat = /v\d+\.\d+\.\d+-[0-9a-zA-Z]+/g;
+        var s = '', chunk = 65536;
+        var dec = new TextDecoder('latin1');
+        for (var off = 0; off < bytes.length; off += chunk) {
+          s = dec.decode(bytes.subarray(off, Math.min(off + chunk, bytes.length)));
+          var m = pat.exec(s);
+          if (m) {
+            if (m.index + m[0].length < s.length || off + chunk >= bytes.length) return m[0];
+          }
+          pat.lastIndex = 0;
+        }
+        return null;
+      }
+
+      function setFlashEnabled() {
+        $('btn-flash').disabled = !(uploadedOK && picked && picked.size === EXPECT);
+      }
+
+      $('fwfile').addEventListener('change', function (e) {
+        picked = e.target.files && e.target.files[0];
+        uploadedOK = false;
+        if (!picked) { $('fw-info').classList.remove('on'); setFlashEnabled(); return; }
+
+        var fr = new FileReader();
+        fr.onload = function () {
+          var bytes = new Uint8Array(fr.result);
+          var ver = findVersion(bytes);
+          var md5 = md5Bytes(bytes);
+          txt('fw-ver', ver || '(not found)');
+          txt('fw-size', (picked.size / 1024).toFixed(1) + ' KB (' + picked.size + ' bytes)');
+          txt('fw-md5', md5);
+          var ok = (picked.size === EXPECT);
+          txt('fw-check', ok ? t('update_size_ok') : t('update_size_bad'));
+          $('fw-check').className = ok ? 'fw-ok' : 'fw-bad';
+          $('fw-info').classList.add('on');
+          setFlashEnabled();
+        };
+        fr.readAsArrayBuffer(picked);
+      });
+
+      $('btn-upload').addEventListener('click', function () {
+        if (!picked) { alert(t('update_pick_first')); return; }
+        if (busy) return;
+        busy = true;
+        $('btn-upload').disabled = true;
+        $('prog-wrap').classList.add('on');
+        $('prog').style.width = '0%';
+
+        var fd = new FormData();
+        fd.append('MAX_FILE_SIZE', '1000000');
+        fd.append('uploadedfile', picked, picked.name);
+
+        var x = new XMLHttpRequest();
+        x.upload.onprogress = function (ev) {
+          if (ev.lengthComputable) {
+            $('prog').style.width = Math.round(ev.loaded * 100 / ev.total) + '%';
+          }
+        };
+        function done() {
+          busy = false;
+          $('btn-upload').disabled = false;
+          $('prog').style.width = '100%';
+          uploadedOK = true;
+          setFlashEnabled();
+        }
+        x.onload = done; x.onerror = done; x.onabort = done;
+        x.open('POST', '/upload', true);
+        x.send(fd);
+      });
+
+      function openConfirm() { $('mask').classList.add('on'); $('yes-input').value = ''; $('yes-input').focus(); }
+      function closeConfirm() { $('mask').classList.remove('on'); }
+
+      $('btn-flash').addEventListener('click', function () {
+        if (this.disabled) return;
+        openConfirm();
+      });
+      $('btn-cancel').addEventListener('click', closeConfirm);
+      $('mask').addEventListener('click', function (e) {
+        if (e.target === $('mask')) closeConfirm();
+      });
+
+      function submitConfirm() {
+        var v = ($('yes-input').value || '').trim();
+        if (v !== 'yes') { closeConfirm(); return; }
+        closeConfirm();
+        doFlash();
+      }
+      $('yes-input').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); submitConfirm(); }
+        if (e.key === 'Escape') { e.preventDefault(); closeConfirm(); }
+      });
+      $('btn-go').addEventListener('click', submitConfirm);
+
+      function doFlash() {
+        $('btn-flash').disabled = true;
+        txt('fw-check', t('update_flashing'));
+        $('fw-check').className = 'fw-ok';
+        var x = new XMLHttpRequest();
+        x.open('GET', '/reset', true);
+        x.send();
+      }
+
+      loadCurrent();
+      setFlashEnabled();
+    })();
+    </script>
   </body>
 </html>
