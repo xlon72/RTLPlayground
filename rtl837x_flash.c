@@ -94,6 +94,12 @@ uint8_t flash_read_status(void)
 	}
 
 	// setup status read command
+	// CMD_READ_STATUS (0x05) has no dummy phase, but the controller may
+	// still hold the 8 dummy cycles left by the last fast-read MMIO
+	// transfer, so it samples the wrong byte and reports the chip busy
+	// forever. Clear both explicitly -- flash_read_jedecid() does the same.
+	SFR_FLASH_MODEB = 0;
+	SFR_FLASH_DUMMYCYCLES = 0;
 	SFR_FLASH_TCONF = 0x11;
 	SFR_FLASH_CMD_R = CMD_READ_STATUS;
 
@@ -222,10 +228,13 @@ void flash_read_jedecid(void)
 void flash_write_enable(void)
 {
 	short status;
+	uint16_t t;
 
 	// Wait until busy bit clear
+	t = 0;
 	do {
 		status = flash_read_status();
+		if (!++t) { print_string("[WE:BUSY]"); break; }
 	} while (status & 0x1);
 
 	SFR_FLASH_TCONF = 0x18;
@@ -240,8 +249,10 @@ void flash_write_enable(void)
 
 	SFR_FLASH_EXEC_GO = 1;
 	// Wait for write status enabled
+	t = 0;
 	do {
 		status = flash_read_status();
+		if (!++t) { print_string("[WE:TIMEOUT]"); break; }
 	} while (!(status & 0x2));
 }
 
