@@ -1090,11 +1090,10 @@ __code const struct machine machine = {
 	.reset_pin = GPIO_NA,
 	.high_leds = { .mux =  LED_28_SYS | LED_29, .enable = LED_27 | LED_28_SYS | LED_29 },
 	.port_led_set = { 0, 0, 0, 1, 0, 0, 0, 0, 1},
-	/* LED hardware follows the PCB-K0402WS-V3 layout, not the stock
-	 * FG-4GT-2SX one: the two boards share the same port map and SFP
-	 * wiring but not the LED wiring. Taken from the
-	 * MACHINE_PCB_K0402WS_V3 / MACHINE_HI_K0402WS definition, where
-	 * indicators were verified working on this board. */
+	/* LED hardware follows the PCB-K0402WS-V3 board, not the stock
+	 * FG-4GT-2SX one: the two share the same port map and SFP wiring
+	 * but not the LED wiring. Values copied from the PCB-K0402WS-V3
+	 * definition, where the indicators were verified working. */
 	.led_sets = {
 			{
 				LEDS_2G5 | LEDS_LINK | LEDS_10M | LEDS_ACT,
@@ -1115,8 +1114,8 @@ __code const struct machine machine = {
 		},
 	};
 
-/* Only set bit 6 and leave the rest of RTL837X_REG_LED_GLB_IO_EN at its
- * reset value -- the stock FG-4GT-2SX code wrote the whole register with
+/* Only set bit 6, leaving the rest of RTL837X_REG_LED_GLB_IO_EN at its
+ * reset value. The stock FG-4GT-2SX code wrote the whole register with
  * REG_SET(.., 0x7624155b), which clobbers the other LED enable bits. */
 void machine_custom_init(void) {
 	reg_bit_set(RTL837X_REG_LED_GLB_IO_EN, 6);
