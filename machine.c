@@ -1079,14 +1079,14 @@ __code const struct machine machine = {
 	.sfp_port[0].pin_los = GPIO_NA,
 	.sfp_port[0].pin_tx_disable = GPIO_NA,
 	.sfp_port[0].sds = 1,
-	.sfp_port[0].i2c = { .sda = GPIO39_I2C_SDA4, .scl = GPIO40_I2C_SCL3_MDC1 },
+	.sfp_port[0].i2c = { .sda = GPIO47_I2C_SDA0, .scl = GPIO46_I2C_SCL0 },
 
 	// Right SFP port
 	.sfp_port[1].pin_detect = GPIO37,
 	.sfp_port[1].pin_los = GPIO_NA,
 	.sfp_port[1].pin_tx_disable = GPIO_NA,
 	.sfp_port[1].sds = 0,
-	.sfp_port[1].i2c = { .sda = GPIO41_I2C_SDA3_MDIO1, .scl = GPIO40_I2C_SCL3_MDC1 },
+	.sfp_port[1].i2c = { .sda = GPIO49_I2C_SDA1, .scl = GPIO48_I2C_SCL1 },
 
 	.reset_pin = GPIO_NA,
 
