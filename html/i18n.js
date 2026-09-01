@@ -229,6 +229,14 @@ var LANG = {
     update_cancel: 'Cancel',
     update_flashing: 'Flashing… device will reboot when done',
     update_pick_first: 'Choose a firmware file first',
+    update_upload_state: 'Upload state:',
+    update_state_idle: 'Not uploaded yet',
+    update_state_sending: 'Sending…',
+    update_state_writing: 'Sent, device is writing to flash…',
+    update_state_staged: 'Received by device, ready to flash',
+    update_state_401: 'Not logged in, please log in and retry',
+    update_state_short: 'Upload incomplete, please retry',
+    update_state_failed: 'Upload failed',
   },
 
   ja: {
@@ -461,6 +469,14 @@ var LANG = {
     update_cancel: 'キャンセル',
     update_flashing: '書き込み中… 完了すると再起動します',
     update_pick_first: '先にファームウェアファイルを選択してください',
+    update_upload_state: 'アップロード状態:',
+    update_state_idle: '未アップロード',
+    update_state_sending: '送信中…',
+    update_state_writing: '送信完了、フラッシュ書き込み中…',
+    update_state_staged: '受信完了、書き込み可能',
+    update_state_401: '未ログインです。ログインして再試行してください',
+    update_state_short: 'アップロードが不完全です。再試行してください',
+    update_state_failed: 'アップロード失敗',
   },
 
   zh: {
@@ -784,6 +800,14 @@ var LANG = {
     update_cancel: '取消',
     update_flashing: '正在刷写… 完成后设备将自动重启',
     update_pick_first: '请先选择固件文件',
+    update_upload_state: '上传状态:',
+    update_state_idle: '尚未上传',
+    update_state_sending: '正在发送…',
+    update_state_writing: '已发送，设备正在写入 Flash…',
+    update_state_staged: '设备已接收，可以刷写',
+    update_state_401: '未登录，请登录后重试',
+    update_state_short: '上传不完整，请重试',
+    update_state_failed: '上传失败',
   }
 };
 

@@ -15,12 +15,16 @@
       }
       .fw-progress-wrap.on { display: block; }
       .fw-progress { height: 100%; width: 0%; background: var(--accent, #6d28d9); transition: width .2s; }
-      .fw-info { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; margin-top: 1em; display: none; }
+      .fw-info {
+        border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px;
+        margin-top: 1em; display: none; max-width: 620px;   /* 与 .card 同宽 */
+      }
       .fw-info.on { display: block; }
       .fw-info td { padding: 3px 12px 3px 0; font-family: ui-monospace, monospace; font-size: 0.9em; }
       .fw-info td.k { font-family: inherit; color: var(--text-dim, #6b7280); }
       .fw-ok { color: #16a34a; font-weight: 600; }
       .fw-bad { color: #dc2626; font-weight: 600; }
+      .fw-dim { color: var(--text-dim, #6b7280); }
       .fw-actions { margin-top: 1.5em; }
       .fw-modal-mask {
         position: fixed; inset: 0; background: rgba(0,0,0,.45);
@@ -63,6 +67,7 @@
           <tr><td class="k" data-i18n="update_size">Size:</td><td id="fw-size">–</td></tr>
           <tr><td class="k" data-i18n="update_md5">MD5:</td><td id="fw-md5">–</td></tr>
           <tr><td class="k" data-i18n="update_size_check">Size check:</td><td id="fw-check">–</td></tr>
+          <tr><td class="k" data-i18n="update_upload_state">Upload state:</td><td id="fw-state">–</td></tr>
         </table>
       </div>
 
@@ -94,6 +99,7 @@
 
       function $(id) { return document.getElementById(id); }
       function txt(id, v) { var e = $(id); if (e) e.textContent = v; }
+      function cls(id, v) { var e = $(id); if (e) e.className = v; }
 
       function loadCurrent() {
         var x = new XMLHttpRequest();
@@ -110,8 +116,10 @@
         x.send();
       }
 
+      /* 版本串形如 v0.1.0-c86d4b3；CI 里 git describe 失败时会退化成 v0.1.0-，
+         所以后缀允许为空。 */
       function findVersion(bytes) {
-        var pat = /v\d+\.\d+\.\d+-[0-9a-zA-Z]+/g;
+        var pat = /v\d+\.\d+\.\d+-[0-9a-zA-Z]*/g;
         var s = '', chunk = 65536;
         var dec = new TextDecoder('latin1');
         for (var off = 0; off < bytes.length; off += chunk) {
@@ -138,19 +146,23 @@
         fr.onload = function () {
           var bytes = new Uint8Array(fr.result);
           var ver = findVersion(bytes);
-          var md5 = md5Bytes(bytes);
           txt('fw-ver', ver || '(not found)');
           txt('fw-size', (picked.size / 1024).toFixed(1) + ' KB (' + picked.size + ' bytes)');
-          txt('fw-md5', md5);
+          txt('fw-md5', md5Bytes(bytes));
           var ok = (picked.size === EXPECT);
           txt('fw-check', ok ? t('update_size_ok') : t('update_size_bad'));
-          $('fw-check').className = ok ? 'fw-ok' : 'fw-bad';
+          cls('fw-check', ok ? 'fw-ok' : 'fw-bad');
+          txt('fw-state', t('update_state_idle'));
+          cls('fw-state', 'fw-dim');
           $('fw-info').classList.add('on');
           setFlashEnabled();
         };
         fr.readAsArrayBuffer(picked);
       });
 
+      /* 设备写完 flash 后只关闭 TCP 连接, 不发 HTTP 响应, 因此
+         onload/onerror 都可能永不触发。判定依据是"字节是否全部发出",
+         而不是"是否收到响应"。 */
       $('btn-upload').addEventListener('click', function () {
         if (!picked) { alert(t('update_pick_first')); return; }
         if (busy) return;
@@ -158,25 +170,63 @@
         $('btn-upload').disabled = true;
         $('prog-wrap').classList.add('on');
         $('prog').style.width = '0%';
+        txt('fw-state', t('update_state_sending'));
+        cls('fw-state', 'fw-dim');
 
         var fd = new FormData();
         fd.append('MAX_FILE_SIZE', '1000000');
         fd.append('uploadedfile', picked, picked.name);
 
+        var sent = 0, total = 0, settled = false, timer = null;
+
+        function settle(kind) {
+          if (settled) return;
+          settled = true;
+          if (timer) clearTimeout(timer);
+          busy = false;
+          $('btn-upload').disabled = false;
+
+          var allSent = (total > 0 && sent >= total);
+          if (kind === '401') {
+            uploadedOK = false;
+            txt('fw-state', t('update_state_401'));
+            cls('fw-state', 'fw-bad');
+          } else if (kind === 'short') {
+            uploadedOK = false;
+            txt('fw-state', t('update_state_short'));
+            cls('fw-state', 'fw-bad');
+          } else if (allSent || kind === 'timeout') {
+            /* 字节全部发出(或超时但已发出), 视为设备已接收。
+               完整性由设备端 CRC16 把关, 失败它会拒绝刷入。 */
+            uploadedOK = true;
+            $('prog').style.width = '100%';
+            txt('fw-state', t('update_state_staged'));
+            cls('fw-state', 'fw-ok');
+          } else {
+            uploadedOK = false;
+            txt('fw-state', t('update_state_failed'));
+            cls('fw-state', 'fw-bad');
+          }
+          setFlashEnabled();
+        }
+
         var x = new XMLHttpRequest();
         x.upload.onprogress = function (ev) {
           if (ev.lengthComputable) {
-            $('prog').style.width = Math.round(ev.loaded * 100 / ev.total) + '%';
+            sent = ev.loaded; total = ev.total;
+            $('prog').style.width = Math.round(sent * 100 / total) + '%';
           }
         };
-        function done() {
-          busy = false;
-          $('btn-upload').disabled = false;
-          $('prog').style.width = '100%';
-          uploadedOK = true;
-          setFlashEnabled();
-        }
-        x.onload = done; x.onerror = done; x.onabort = done;
+        x.upload.onload = function () {
+          /* 字节发完了, 但设备还在写 flash, 可能要几十秒 */
+          txt('fw-state', t('update_state_writing'));
+        };
+        x.onload = function () { settle(x.status === 401 ? '401' : 'ok'); };
+        x.onerror = function () { settle(total > 0 && sent < total ? 'short' : 'ok'); };
+        x.onabort = function () { settle('abort'); };
+        /* 兜底: 设备写 512KB flash 可能很慢, 给足 3 分钟 */
+        timer = setTimeout(function () { settle('timeout'); }, 180000);
+
         x.open('POST', '/upload', true);
         x.send(fd);
       });
@@ -207,8 +257,8 @@
 
       function doFlash() {
         $('btn-flash').disabled = true;
-        txt('fw-check', t('update_flashing'));
-        $('fw-check').className = 'fw-ok';
+        txt('fw-state', t('update_flashing'));
+        cls('fw-state', 'fw-ok');
         var x = new XMLHttpRequest();
         x.open('GET', '/reset', true);
         x.send();
