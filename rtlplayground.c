@@ -1933,12 +1933,6 @@ void check_and_flash_update_image(void)
 	flash_read_jedecid(); // This initializes also __xdata flash_size variable
 
 	print_string(get_flash_size_str()); print_string(" flash size detected. (1 MB is needed for image updating)\n");
-	/* DEBUG BUILD: never let a garbage flash-status reading trigger an image
-	 * copy. If 0x80000 of the leftover stock firmware happened to start with
-	 * 00 40, the original code would move 1MB of junk over the running image
-	 * and reset -> brick. Remove this block once the flash issue is fixed. */
-	print_string("[D2b:update-check SKIPPED]\n");
-	return;
 	if (flash_size < FIRMWARE_UPLOAD_START*2) {
 		print_string("Flash too small for updating; skipping update check\n");
 		return;
