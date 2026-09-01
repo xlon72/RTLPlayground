@@ -1928,7 +1928,14 @@ void setup_i2c(void)
 }
 
 
-void check_and_flash_update_image(void)
+/* Bank 0 only holds 16 KB and is full. This runs once at boot and is called
+ * from main() in bank 0, so it is banked; everything it calls
+ * (flash_read_bulk, flash_sector_erase, crc16, print_string, reset_chip) lives
+ * in HOME and is reachable with a plain call from any bank. */
+#pragma codeseg BANK2
+#pragma constseg BANK2
+
+void check_and_flash_update_image(void) __banked
 {
 	flash_read_jedecid(); // This initializes also __xdata flash_size variable
 
@@ -2012,6 +2019,9 @@ void check_and_flash_update_image(void)
 		print_string("no update image found.\n");
 	}
 }
+
+#pragma codeseg HOME
+#pragma constseg HOME
 
 /* Give the switch a name carrying the tail of its MAC, so several of them on
  * one network are distinguishable out of the box. Called after the startup
