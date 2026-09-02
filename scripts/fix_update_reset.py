@@ -1,0 +1,264 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""update.html: 移除"输入 yes 开始刷写"流程。
+
+httpd.c 已恢复为"上传 CRC 通过后自动 reset_chip()"。而 /reset 端点实际是
+恢复出厂设置(uip_close + delay + reset_chip), 且单连接下网页发 /reset
+本就拿不到连接 —— 这个流程既多余又危险。幂等。
+"""
+import io, os, re
+
+HTML = """<!DOCTYPE html>
+<html>
+  <head>
+    <script src="/i18n.js"></script>
+    <script src="/md5.js"></script>
+    <link rel="stylesheet" href="style.css">
+    <title data-i18n="update_title">Firmware update</title>
+    <style>
+      .fw-current { margin-bottom: 1.5em; }
+      .fw-current td { padding: 2px 12px 2px 0; }
+      .fw-current td.k { color: var(--text-dim, #6b7280); }
+      .fw-progress-wrap {
+        height: 8px; background: #e5e7eb; border-radius: 4px;
+        overflow: hidden; margin: 0.8em 0; display: none;
+      }
+      .fw-progress-wrap.on { display: block; }
+      .fw-progress { height: 100%; width: 0%; background: var(--accent, #6d28d9); transition: width .2s; }
+      .fw-info {
+        border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px;
+        margin-top: 1em; display: none; max-width: 620px;
+      }
+      .fw-info.on { display: block; }
+      .fw-info td { padding: 3px 12px 3px 0; font-family: ui-monospace, monospace; font-size: 0.9em; }
+      .fw-info td.k { font-family: inherit; color: var(--text-dim, #6b7280); }
+      .fw-ok { color: #16a34a; font-weight: 600; }
+      .fw-bad { color: #dc2626; font-weight: 600; }
+      .fw-dim { color: var(--text-dim, #6b7280); }
+      .fw-note { max-width: 620px; margin-top: 1em; font-size: 0.9em; color: var(--text-dim, #6b7280); }
+    </style>
+  </head>
+  <body>
+    <nav id="sidebar"></nav>
+    <div style="margin-left:16%;padding:1px 16px;max-width:620px;">
+      <h1 data-i18n="update_heading">Firmware Update</h1>
+
+      <div class="fw-current">
+        <table>
+          <tr><td class="k" data-i18n="update_cur_sw">Current software:</td><td id="cur-sw">&ndash;</td></tr>
+          <tr><td class="k" data-i18n="update_cur_build">Build date:</td><td id="cur-build">&ndash;</td></tr>
+          <tr><td class="k" data-i18n="update_cur_hw">Hardware:</td><td id="cur-hw">&ndash;</td></tr>
+        </table>
+      </div>
+
+      <div class="card">
+        <span data-i18n="update_instruction">Choose a firmware update file to upload:</span><br/><br/>
+        <input id="fwfile" name="uploadedfile" type="file" accept=".bin" /><br/>
+        <div class="fw-progress-wrap" id="prog-wrap"><div class="fw-progress" id="prog"></div></div>
+        <input style="margin-top:1em" type="button" id="btn-upload" value="Upload File" data-i18n="update_upload" />
+      </div>
+
+      <div class="fw-info" id="fw-info">
+        <table>
+          <tr><td class="k" data-i18n="update_new_ver">Image version:</td><td id="fw-ver">&ndash;</td></tr>
+          <tr><td class="k" data-i18n="update_size">Size:</td><td id="fw-size">&ndash;</td></tr>
+          <tr><td class="k" data-i18n="update_md5">MD5:</td><td id="fw-md5">&ndash;</td></tr>
+          <tr><td class="k" data-i18n="update_size_check">Size check:</td><td id="fw-check">&ndash;</td></tr>
+          <tr><td class="k" data-i18n="update_upload_state">Upload state:</td><td id="fw-state">&ndash;</td></tr>
+        </table>
+      </div>
+
+      <div class="fw-note" data-i18n="update_auto_reboot">
+        Once the upload finishes the switch verifies the image and reboots
+        into it automatically. Do not power it off during that time.
+      </div>
+    </div>
+
+    <script src="/navigation.js"></script>
+    <script>
+    (function () {
+      var EXPECT = 524288;   /* Makefile IMAGESIZE */
+      var picked = null;
+      var busy = false;
+
+      function $(id) { return document.getElementById(id); }
+      function txt(id, v) { var e = $(id); if (e) e.textContent = v; }
+      function cls(id, v) { var e = $(id); if (e) e.className = v; }
+
+      function loadCurrent() {
+        var x = new XMLHttpRequest();
+        x.onreadystatechange = function () {
+          if (this.readyState !== 4 || this.status !== 200) return;
+          try {
+            var d = JSON.parse(this.responseText);
+            txt('cur-sw', d.sw_ver || '\\u2013');
+            txt('cur-build', d.build_date || '\\u2013');
+            txt('cur-hw', d.hw_ver || '\\u2013');
+          } catch (e) {}
+        };
+        x.open('GET', '/information.json', true);
+        x.send();
+      }
+
+      /* CI 里 git describe 失败时版本串退化为 v0.1.0-, 故后缀允许为空 */
+      function findVersion(bytes) {
+        var pat = /v\\d+\\.\\d+\\.\\d+-[0-9a-zA-Z]*/g;
+        var dec = new TextDecoder('latin1');
+        var chunk = 65536;
+        for (var off = 0; off < bytes.length; off += chunk) {
+          var s = dec.decode(bytes.subarray(off, Math.min(off + chunk, bytes.length)));
+          var m = pat.exec(s);
+          if (m) {
+            if (m.index + m[0].length < s.length || off + chunk >= bytes.length) return m[0];
+          }
+          pat.lastIndex = 0;
+        }
+        return null;
+      }
+
+      $('fwfile').addEventListener('change', function (e) {
+        picked = e.target.files && e.target.files[0];
+        if (!picked) { $('fw-info').classList.remove('on'); return; }
+        var fr = new FileReader();
+        fr.onload = function () {
+          var bytes = new Uint8Array(fr.result);
+          txt('fw-ver', findVersion(bytes) || '(not found)');
+          txt('fw-size', (picked.size / 1024).toFixed(1) + ' KB (' + picked.size + ' bytes)');
+          txt('fw-md5', md5Bytes(bytes));
+          var ok = (picked.size === EXPECT);
+          txt('fw-check', ok ? t('update_size_ok') : t('update_size_bad'));
+          cls('fw-check', ok ? 'fw-ok' : 'fw-bad');
+          txt('fw-state', t('update_state_idle'));
+          cls('fw-state', 'fw-dim');
+          $('fw-info').classList.add('on');
+        };
+        fr.readAsArrayBuffer(picked);
+      });
+
+      /* 设备写完 flash 后只关 TCP, 不发 HTTP 响应, 故不能依赖
+         onload/onerror; 判定依据是字节是否全部发出。真正的完整性
+         由设备端 CRC16 把关。 */
+      $('btn-upload').addEventListener('click', function () {
+        if (!picked) { alert(t('update_pick_first')); return; }
+        if (busy) return;
+        busy = true;
+        $('btn-upload').disabled = true;
+        $('prog-wrap').classList.add('on');
+        $('prog').style.width = '0%';
+        txt('fw-state', t('update_state_sending'));
+        cls('fw-state', 'fw-dim');
+
+        var fd = new FormData();
+        fd.append('MAX_FILE_SIZE', '1000000');
+        fd.append('uploadedfile', picked, picked.name);
+
+        var sent = 0, total = 0, settled = false, timer = null;
+
+        function settle(kind) {
+          if (settled) return;
+          settled = true;
+          if (timer) clearTimeout(timer);
+          busy = false;
+          $('btn-upload').disabled = false;
+          if (kind === '401') {
+            txt('fw-state', t('update_state_401')); cls('fw-state', 'fw-bad');
+          } else if (kind === 'short') {
+            txt('fw-state', t('update_state_short')); cls('fw-state', 'fw-bad');
+          } else {
+            $('prog').style.width = '100%';
+            txt('fw-state', t('update_state_writing')); cls('fw-state', 'fw-ok');
+          }
+        }
+
+        var x = new XMLHttpRequest();
+        x.upload.onprogress = function (ev) {
+          if (ev.lengthComputable) {
+            sent = ev.loaded; total = ev.total;
+            $('prog').style.width = Math.round(sent * 100 / total) + '%';
+          }
+        };
+        x.onload = function () { settle(x.status === 401 ? '401' : 'ok'); };
+        x.onerror = function () { settle(total > 0 && sent < total ? 'short' : 'ok'); };
+        x.onabort = function () { settle('abort'); };
+        timer = setTimeout(function () { settle('timeout'); }, 180000);
+        x.open('POST', '/upload', true);
+        x.send(fd);
+      });
+
+      loadCurrent();
+    })();
+    </script>
+  </body>
+</html>
+"""
+
+p = "html/update.html"
+io.open(p, "w", encoding="utf-8").write(HTML)
+print("  + 重写: update.html（移除 /reset 与确认框）")
+
+# 补缺失的 i18n 词条
+ADD = {
+ "update_title":          ("Firmware update", "ファームウェア更新", "固件升级"),
+ "update_heading":        ("Firmware Update", "ファームウェア更新", "固件升级"),
+ "update_instruction":    ("Choose a firmware update file to upload:",
+                           "アップロードするファームウェアを選択:",
+                           "选择要上传的固件文件:"),
+ "update_upload":         ("Upload File", "アップロード", "上传文件"),
+ "update_auto_reboot":    ("Once the upload finishes the switch verifies the image "
+                           "and reboots into it automatically. Do not power it off "
+                           "during that time.",
+                           "アップロード完了後、本体がイメージを検証して自動的に"
+                           "再起動します。その間は電源を切らないでください。",
+                           "上传完成后设备会校验镜像并自动重启刷入，"
+                           "期间请勿断电。"),
+ "update_state_idle":     ("Not uploaded yet", "未アップロード", "尚未上传"),
+ "update_state_sending":  ("Sending…", "送信中…", "正在发送…"),
+ "update_state_writing":  ("Sent, device is writing to flash and will reboot…",
+                           "送信完了、フラッシュ書き込み後に再起動します…",
+                           "已发送，设备正在写入 Flash 并将自动重启…"),
+ "update_state_401":      ("Not logged in, please log in and retry",
+                           "未ログインです。ログインして再試行してください",
+                           "未登录，请登录后重试"),
+ "update_state_short":    ("Upload incomplete, please retry",
+                           "アップロードが不完全です。再試行してください",
+                           "上传不完整，请重试"),
+ "update_pick_first":     ("Choose a firmware file first",
+                           "先にファームウェアファイルを選択してください",
+                           "请先选择固件文件"),
+}
+
+ip = "html/i18n.js"
+s = io.open(ip, encoding="utf-8").read()
+lines = s.splitlines(keepends=True)
+bounds, cur = {}, None
+for i, ln in enumerate(lines):
+    m = re.match(r"^  (en|ja|zh): \{", ln)
+    if m:
+        cur = m.group(1); bounds[cur] = [i, None]
+    elif cur and re.match(r"^  \},?\s*$", ln):
+        bounds[cur][1] = i; cur = None
+
+if [k for k in ("en","ja","zh") if k not in bounds or bounds[k][1] is None]:
+    print("  ! i18n.js 语言包定位失败, 跳过词条补充")
+else:
+    n = 0
+    for lang, idx in (("zh",2), ("ja",1), ("en",0)):
+        end = bounds[lang][1]
+        block = ""
+        for k, v in ADD.items():
+            if re.search(r"^    %s:" % re.escape(k), s, re.M):
+                continue
+            block += "    %s: '%s',\n" % (k, v[idx]); n += 1
+        if block:
+            lines[end:end] = [block]
+    if n:
+        io.open(ip, "w", encoding="utf-8").write("".join(lines))
+        print("  + 补入: i18n.js %d 条翻译" % n)
+    else:
+        print("  = 跳过: i18n.js 词条已齐")
+
+h = io.open(p, encoding="utf-8").read()
+print("\n自检:")
+print("  update.html 无 /reset:  %s" % ("OK" if "/reset" not in h else "残留 <<<"))
+print("  update.html 无 doFlash: %s" % ("OK" if "doFlash" not in h else "残留 <<<"))
+print("  md5.js 引用:            %s" % ("OK" if "md5.js" in h else "缺失 <<<"))
