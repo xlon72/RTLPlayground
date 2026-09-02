@@ -12,7 +12,7 @@ jobs:
       image: debian:trixie
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install dependencies
         run: |
@@ -32,7 +32,7 @@ jobs:
         run: make MACHINE="FG_4GT_2SX_V2_0"
 
       - name: Upload firmware
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: firmware-FG_4GT_2SX_V2_0
           path: output/**/*.bin
