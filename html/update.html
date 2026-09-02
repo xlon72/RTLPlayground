@@ -6,7 +6,7 @@
     <link rel="stylesheet" href="style.css">
     <title data-i18n="update_title">Firmware update</title>
     <style>
-      .fw-current { margin-bottom: 1.5em; }
+      .fw-current { margin-bottom: 1.5em; width: 100%; }
       .fw-current td { padding: 2px 12px 2px 0; }
       .fw-current td.k { color: var(--text-dim, #6b7280); }
       .fw-progress-wrap {
@@ -25,7 +25,7 @@
       .fw-ok { color: #16a34a; font-weight: 600; }
       .fw-bad { color: #dc2626; font-weight: 600; }
       .fw-dim { color: var(--text-dim, #6b7280); }
-      .fw-actions { margin-top: 1.5em; }
+      .fw-actions { max-width: 620px; margin-top: 1.5em; }
       .fw-modal-mask {
         position: fixed; inset: 0; background: rgba(0,0,0,.45);
         display: none; align-items: center; justify-content: center; z-index: 50;
@@ -43,7 +43,7 @@
   </head>
   <body>
     <nav id="sidebar"></nav>
-    <div style="margin-left:16%;padding:1px 16px;">
+    <div style="margin-left:16%;padding:1px 16px;max-width:620px;">
       <h1 data-i18n="update_heading">Firmware Update</h1>
 
       <div class="fw-current">
