@@ -19,6 +19,12 @@ jobs:
           apt update
           apt install make gcc sdcc xxd python-is-python3 libjson-c-dev git -y
 
+      - name: Show toolchain versions
+        run: |
+          echo "sdcc: $(sdcc --version 2>&1 | head -2 | tr '\n' ' ')"
+          echo "gcc:  $(gcc --version | head -1)"
+          echo "make: $(make --version | head -1)"
+
       - name: Check machine definitions
         run: make machine_check
 
@@ -28,5 +34,6 @@ jobs:
       - name: Upload firmware
         uses: actions/upload-artifact@v4
         with:
-          name: firmware-nosfp
-          path: output/*.bin
+          name: firmware-FG_4GT_2SX_V2_0
+          path: output/**/*.bin
+          retention-days: 90
