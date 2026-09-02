@@ -36,6 +36,8 @@ __xdata uint8_t entry;
 __xdata uint16_t slen;
 __xdata uint16_t o_idx;
 __xdata uint16_t len_left;
+__xdata uint16_t cont_len;
+__xdata uint32_t cont_addr;
 
 // HTTP header properties
 __xdata uint8_t boundary[72];
@@ -555,9 +557,6 @@ void httpd_appcall(void)
 	if(uip_connected() && s->tstate == TSTATE_CLOSED) {
 		dbg_string("Connected...\n");
 		s->tstate = TSTATE_NONE;
-		s->cont_len = 0;
-		s->cont_addr = 0;
-		s->tx_len = 0;
 	} else if (uip_closed()) {
 		dbg_string("Connection closed\n");
 		s->tstate = TSTATE_CLOSED;
@@ -574,23 +573,35 @@ void httpd_appcall(void)
 		}
 	} else if (uip_acked() && s->tstate == TSTATE_TX) {
 		dbg_string("ACK\n");
+		if (slen > uip_mss()) {
+			slen -= uip_mss();
+			o_idx += uip_mss();
+		} else {
+			slen = 0;
+			o_idx += slen;
+		}
+
 		s->tstate = TSTATE_ACKED;
-		/* Everything past the first packet is re-read from flash using
-		 * this connection's own cont_*, so outbuf is only ever a
-		 * scratch buffer within one call: another connection may
-		 * overwrite it before this one is polled again. */
-		if (s->cont_len) {
-			slen = s->cont_len > uip_mss() ? uip_mss() : s->cont_len;
+
+		if (slen > uip_mss()) {
+			dbg_string("Sending A: "); dbg_short(slen); dbg_char('\n');
+			uip_send(outbuf + o_idx, uip_mss());
+			s->tstate = TSTATE_TX;
+		} else if (slen > 0) {
+			dbg_string("Sending B: "); dbg_short(slen); dbg_char('\n');
+			uip_send(outbuf + o_idx, slen);
+			s->tstate = TSTATE_TX;
+		} else if (cont_len) {
+			dbg_string("CONT cont_len: "); dbg_short(cont_len);
+			slen = cont_len > uip_mss() ? uip_mss() : cont_len;
 			if (slen > TCP_OUTBUF_SIZE)
 				slen = TCP_OUTBUF_SIZE;
-			s->tx_addr = s->cont_addr;
-			s->tx_len = slen;
-			flash_region.addr = s->cont_addr;
+			flash_region.addr = cont_addr;
 			flash_region.len = slen;
 			flash_read_bulk(outbuf);
 			uip_send(outbuf, slen);
-			s->cont_len -= slen;
-			s->cont_addr += slen;
+			cont_len -= slen;
+			cont_addr += slen;
 			s->tstate = TSTATE_TX;
 		}
 	} else if (uip_newdata() && s->tstate == TSTATE_POST) {
@@ -603,7 +614,7 @@ void httpd_appcall(void)
 			goto do_send;
 		}
 	} else if (uip_newdata() && s->tstate != TSTATE_TX) {
-		s->cont_len = 0;
+		cont_len = 0;
 		dbg_char('<'); dbg_short(uip_len); dbg_char('\n');
 		__xdata uint8_t *p = uip_appdata;
 		// Mark end of request header with \0
@@ -720,15 +731,11 @@ void httpd_appcall(void)
 			slen += strtox(outbuf + slen, "; charset=UTF-8\r\nCache-Control: max-age=60, must-revalidate\r\nConnection: close\r\nAccess-Control-Allow-Origin: *\r\nContent-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; form-action 'self'\r\n\r\n");
 
 			len_left = f_data[entry].len;
-			/* Send at most one MSS in the first packet; the rest is
-			 * re-read from flash per connection. This keeps outbuf
-			 * from having to survive across events. */
-			if (uip_mss() > slen && len_left > uip_mss() - slen)
-				len_left = uip_mss() - slen;
-			if (len_left > TCP_OUTBUF_SIZE - slen)
+			if (len_left > (TCP_OUTBUF_SIZE - slen)) {
+				cont_len = len_left - (TCP_OUTBUF_SIZE - slen);
 				len_left = TCP_OUTBUF_SIZE - slen;
-			s->cont_len = f_data[entry].len - len_left;
-			s->cont_addr = f_data[entry].start + len_left;
+				cont_addr = f_data[entry].start + len_left;
+			}
 			dbg_string("MIME: "); dbg_string(mime_strings[f_data[entry].mime]); dbg_char('\n');
 			flash_region.addr = f_data[entry].start;
 			flash_region.len = len_left;
@@ -750,14 +757,7 @@ do_send:
 		s->tstate = TSTATE_TX;
 	} else if (uip_rexmit()) { // Connection established, need to rexmit?
 		dbg_string("RETRANSMIT requested\n");
-		/* outbuf may hold another connection's data by now, so
-		 * resend the last chunk from flash instead. */
-		if (s->tx_len) {
-			flash_region.addr = s->tx_addr;
-			flash_region.len = s->tx_len;
-			flash_read_bulk(outbuf);
-			uip_send(outbuf, s->tx_len);
-		} else if (slen > uip_mss()) {
+		if (slen > uip_mss()) {
 			dbg_string("Sending C: "); dbg_short(slen); dbg_char('\n');
 			uip_send(outbuf + o_idx, uip_mss());
 			dbg_string("Sending C done\n");

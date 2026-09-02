@@ -12,12 +12,6 @@
    for each TCP connection. */
 typedef struct httpd_state {
    uint8_t tstate;
-   /* Continuation state: everything after the first packet is re-read
-    * from flash, so outbuf never has to survive across events. */
-   uint16_t cont_len;    /* bytes still to send, 0 = none */
-   uint32_t cont_addr;   /* next flash address to read from */
-   uint32_t tx_addr;     /* start of the chunk last transmitted */
-   uint16_t tx_len;      /* its length; 0 = no chunk sent yet */
 } uip_tcp_appstate_t;
 
 /* Finally we define the application function to be called by uIP. */
