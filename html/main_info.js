@@ -13,25 +13,34 @@ const infoKeyMap = {
   'sfp_slot_1': 'info_sfp1'
 };
 
-document.addEventListener("DOMContentLoaded", function () {
+function fillInfoTable(data) {
+    const tbl = document.getElementById('infoTable');
+    if (!tbl) return;
+    const tableBody = tbl.querySelector('tbody');
+    if (!tableBody) return;
+    tableBody.innerHTML = '';
+
+    for (const [key, value] of Object.entries(data)) {
+        const row = document.createElement('tr');
+        const cellKey = document.createElement('td');
+        const cellValue = document.createElement('td');
+
+        cellKey.textContent = t(infoKeyMap[key] || key);
+        cellValue.textContent = value;
+
+        row.appendChild(cellKey);
+        row.appendChild(cellValue);
+        tableBody.appendChild(row);
+    }
+}
+
+window.refreshInfoTable = function () {
     fetch('/information.json')
-        .then(response => response.json())
-        .then(data => {
-            const tableBody = document.getElementById('infoTable').querySelector('tbody');
+        .then(function (r) { return r.json(); })
+        .then(fillInfoTable)
+        .catch(function (e) { console.error('Error fetching the data:', e); });
+};
 
-            // Create table rows
-            for (const [key, value] of Object.entries(data)) {
-                const row = document.createElement('tr');
-                const cellKey = document.createElement('td');
-                const cellValue = document.createElement('td');
-
-                cellKey.textContent = t(infoKeyMap[key] || key);
-                cellValue.textContent = value;
-
-                row.appendChild(cellKey);
-                row.appendChild(cellValue);
-                tableBody.appendChild(row);
-            }
-        })
-        .catch(error => console.error('Error fetching the data:', error));
+document.addEventListener("DOMContentLoaded", function () {
+    window.refreshInfoTable();
 });

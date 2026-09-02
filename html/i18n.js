@@ -237,6 +237,10 @@ var LANG = {
     update_state_401: 'Not logged in, please log in and retry',
     update_state_short: 'Upload incomplete, please retry',
     update_state_failed: 'Upload failed',
+    dash_refresh: 'Refresh',
+    dash_auto_refresh: 'Auto Refresh',
+    update_auto_reboot:
+      'Once the upload finishes the switch verifies the image and reboots into it automatically. Do not power it off during that time.',
   },
 
   ja: {
@@ -477,6 +481,10 @@ var LANG = {
     update_state_401: '未ログインです。ログインして再試行してください',
     update_state_short: 'アップロードが不完全です。再試行してください',
     update_state_failed: 'アップロード失敗',
+    dash_refresh: '更新',
+    dash_auto_refresh: '自動更新',
+    update_auto_reboot:
+      'アップロード完了後、スイッチがイメージを検証して自動的に再起動します。その間は電源を切らないでください。',
   },
 
   zh: {
@@ -808,6 +816,10 @@ var LANG = {
     update_state_401: '未登录，请登录后重试',
     update_state_short: '上传不完整，请重试',
     update_state_failed: '上传失败',
+    dash_refresh: '刷新',
+    dash_auto_refresh: '自动刷新',
+    update_auto_reboot:
+      '固件上传完成后，交换机将自动校验镜像并重启。在此期间请勿断电。',
   }
 };
 

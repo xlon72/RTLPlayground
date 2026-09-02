@@ -174,6 +174,18 @@ void reg_to_html_long(register uint16_t reg)
 }
 
 
+/* SFP 插槽索引 -> sfp_port[] 索引。
+ * FG_4GT_2SX_V2_0: 机身丝印 5/6 两个 SFP 笼的顺序与 machine.sfp_port[]
+ * 的索引顺序相反, 导致插第 1 个 SFP 显示成"插槽2"。这里对调。
+ * 纯编译期常量, 不增加任何 RAM 占用。 */
+#if defined(MACHINE_FG_4GT_2SX_V2_0)
+#define SFP_SLOT_0 1
+#define SFP_SLOT_1 0
+#else
+#define SFP_SLOT_0 0
+#define SFP_SLOT_1 1
+#endif
+
 void send_sfp_info(uint8_t sfp)
 {
 	// This loops over the Vendor-name, Vendor OUI, Vendor PN and Vendor rev ASCII fields
@@ -270,10 +282,10 @@ void send_basic_info(void)
 
 	if (machine.n_sfp) {
 		slen += strtox(outbuf + slen, "\",\"sfp_slot_0\":\"");
-		send_sfp_info(0);
+		send_sfp_info(SFP_SLOT_0);
 		if (machine.n_sfp == 2) {
 			slen += strtox(outbuf + slen, "\",\"sfp_slot_1\":\"");
-			send_sfp_info(1);
+			send_sfp_info(SFP_SLOT_1);
 		}
 	}
 	char_to_html('"');

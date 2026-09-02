@@ -183,6 +183,7 @@ function update(callback) {
 	n--;
 	txG[n] = BigInt(p.txG); txB[n] = BigInt(p.txB); rxG[n] = BigInt(p.rxG); rxB[n] = BigInt(p.rxB);
 	txBytes[n] = BigInt(p.txBytes); rxBytes[n] = BigInt(p.rxBytes);
+	pState[n] = (p.enabled == 0) ? -1 : p.link;
 	var psvg = document.getElementById(pid);
 	var tt = document.getElementById(ttid);
 	if (psvg == null || !psvg.contentDocument)

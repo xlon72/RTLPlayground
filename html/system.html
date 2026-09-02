@@ -5,7 +5,7 @@
     <link rel="stylesheet" href="style.css">
     <title data-i18n="sys_title">System Settings</title>
     <style>
-      .tab-bar { display: flex; border-bottom: 2px solid #226; margin-bottom: 0; margin-left: 16%; padding: 1px 16px; padding-bottom: 0; }
+      .tab-bar { display: flex; border-bottom: 2px solid #226; margin-bottom: 0; padding: 0; }
       .tab-btn { padding: 10px 20px; background-color: #ddf; border: none; cursor: pointer; font-size: 1em; border-radius: 8px 8px 0 0; margin-right: 4px; }
       .tab-btn:hover { background-color: #aaf; }
       .tab-btn.active { background-color: #aaf; font-weight: bold; border-bottom: 2px solid #aaf; margin-bottom: -2px; }
@@ -14,13 +14,14 @@
     </style>
   </head>
   <body>
-    <div class="tab-bar">
-      <button class="tab-btn active" onclick="openTab(event, 'system-tab')" data-i18n="sys_tab_system">System</button>
-      <button class="tab-btn" onclick="openTab(event, 'advanced-tab')" data-i18n="sys_tab_advanced">Advanced</button>
-      <button class="tab-btn" onclick="openTab(event, 'console-tab')" data-i18n="sys_tab_console">Console</button>
-    </div>
     <nav id="sidebar"></nav>
     <div style="margin-left:16%;padding:1px 16px;height:1000px;">
+      <div class="tab-bar" >
+        <button class="tab-btn active" onclick="openTab(event, 'system-tab')" data-i18n="sys_tab_system">System</button>
+        <button class="tab-btn" onclick="openTab(event, 'advanced-tab')" data-i18n="sys_tab_advanced">Advanced</button>
+        <button class="tab-btn" onclick="openTab(event, 'console-tab')" data-i18n="sys_tab_console">Console</button>
+      </div>
+
     <div id="ports"></div>
 
     <div id="system-tab" class="tab-content active">
@@ -61,7 +62,6 @@
         </div>
       </div>
       <br/>
-      <span data-i18n="sys_ip_note">When updating the above settings, remember to point your browser to the new IP afterwards:</span><br/>
       <input style="width:40%;" class="action" id="ip_sub" onclick="ipSub();" type="button" data-i18n="sys_update" value="Update Settings"><br/>
       <br/>
       <span data-i18n="sys_save_label">Save all current settings to Flash:</span><br/>

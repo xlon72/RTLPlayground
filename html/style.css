@@ -544,3 +544,35 @@ form .txt_field { position: relative; border-bottom: 2px solid rgba(0, 0, 0, 0.1
 }
 .port-status.port-up { color: #16a34a; font-weight: 600; }
 .port-status.port-down { color: #9ca3af; }
+
+/* 首页自动刷新开关(右上角) */
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.page-head h1 { margin: 0; }
+
+button.refresh-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #f3f4f6;
+  color: #6b7280;
+  border: 1px solid #d2d2d7;
+  border-radius: 10px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 400;
+  cursor: pointer;
+  white-space: nowrap;
+}
+button.refresh-toggle svg { width: 14px; height: 14px; }
+button.refresh-toggle:hover { background: #e9eaee; }
+button.refresh-toggle.on {
+  background: var(--accent, #6d28d9);
+  color: #fff;
+  border-color: var(--accent, #6d28d9);
+}
+button.refresh-toggle.on:hover { filter: brightness(1.08); }
