@@ -1,3 +1,35 @@
+(function() {
+    if (window._netPatched) return;
+    window._netPatched = true;
+    
+    var chain = Promise.resolve();
+    
+    // 1. 劫持 Fetch
+    var originalFetch = window.fetch;
+    window.fetch = function() {
+        var args = arguments;
+        return new Promise(function(resolve, reject) {
+            chain = chain.then(function() {
+                return originalFetch.apply(window, args).then(resolve).catch(reject);
+            }).catch(function(){});
+        });
+    };
+
+    // 2. 劫持 XHR
+    var originalSend = XMLHttpRequest.prototype.send;
+    XMLHttpRequest.prototype.send = function() {
+        var xhr = this;
+        var args = arguments;
+        
+        chain = chain.then(function() {
+            return new Promise(function(resolve) {
+                // 监听 XHR 结束事件放行队列
+                xhr.addEventListener("loadend", function() { resolve(); });
+                originalSend.apply(xhr, args);
+            });
+        }).catch(function(){});
+    };
+})();
 var txG = new BigInt64Array(10);
 var txB = new BigInt64Array(10);
 var rxG = new BigInt64Array(10);

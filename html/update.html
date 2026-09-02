@@ -6,7 +6,7 @@
     <link rel="stylesheet" href="style.css">
     <title data-i18n="update_title">Firmware update</title>
     <style>
-      .fw-current { margin-bottom: 1.5em; width: 100%; }
+      .fw-current { margin-bottom: 1.5em; }
       .fw-current td { padding: 2px 12px 2px 0; }
       .fw-current td.k { color: var(--text-dim, #6b7280); }
       .fw-progress-wrap {
@@ -17,7 +17,7 @@
       .fw-progress { height: 100%; width: 0%; background: var(--accent, #6d28d9); transition: width .2s; }
       .fw-info {
         border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px;
-        margin-top: 1em; display: none; max-width: 620px;   /* 与 .card 同宽 */
+        margin-top: 1em; display: none; max-width: 620px;
       }
       .fw-info.on { display: block; }
       .fw-info td { padding: 3px 12px 3px 0; font-family: ui-monospace, monospace; font-size: 0.9em; }
@@ -25,20 +25,7 @@
       .fw-ok { color: #16a34a; font-weight: 600; }
       .fw-bad { color: #dc2626; font-weight: 600; }
       .fw-dim { color: var(--text-dim, #6b7280); }
-      .fw-actions { max-width: 620px; margin-top: 1.5em; }
-      .fw-modal-mask {
-        position: fixed; inset: 0; background: rgba(0,0,0,.45);
-        display: none; align-items: center; justify-content: center; z-index: 50;
-      }
-      .fw-modal-mask.on { display: flex; }
-      .fw-modal {
-        background: #fff; border-radius: 12px; padding: 20px; width: 380px;
-        box-shadow: 0 10px 30px rgba(0,0,0,.25);
-      }
-      .fw-modal h3 { margin: 0 0 10px; font-size: 1.05em; }
-      .fw-modal p { margin: 0 0 12px; color: var(--text-dim, #6b7280); font-size: 0.9em; }
-      .fw-modal input[type=text] { width: 100%; padding: 8px; box-sizing: border-box; }
-      .fw-modal-actions { margin-top: 14px; display: flex; gap: 8px; justify-content: flex-end; }
+      .fw-note { max-width: 620px; margin-top: 1em; font-size: 0.9em; color: var(--text-dim, #6b7280); }
     </style>
   </head>
   <body>
@@ -48,9 +35,9 @@
 
       <div class="fw-current">
         <table>
-          <tr><td class="k" data-i18n="update_cur_sw">Current software:</td><td id="cur-sw">–</td></tr>
-          <tr><td class="k" data-i18n="update_cur_build">Build date:</td><td id="cur-build">–</td></tr>
-          <tr><td class="k" data-i18n="update_cur_hw">Hardware:</td><td id="cur-hw">–</td></tr>
+          <tr><td class="k" data-i18n="update_cur_sw">Current software:</td><td id="cur-sw">&ndash;</td></tr>
+          <tr><td class="k" data-i18n="update_cur_build">Build date:</td><td id="cur-build">&ndash;</td></tr>
+          <tr><td class="k" data-i18n="update_cur_hw">Hardware:</td><td id="cur-hw">&ndash;</td></tr>
         </table>
       </div>
 
@@ -63,29 +50,17 @@
 
       <div class="fw-info" id="fw-info">
         <table>
-          <tr><td class="k" data-i18n="update_new_ver">Image version:</td><td id="fw-ver">–</td></tr>
-          <tr><td class="k" data-i18n="update_size">Size:</td><td id="fw-size">–</td></tr>
-          <tr><td class="k" data-i18n="update_md5">MD5:</td><td id="fw-md5">–</td></tr>
-          <tr><td class="k" data-i18n="update_size_check">Size check:</td><td id="fw-check">–</td></tr>
-          <tr><td class="k" data-i18n="update_upload_state">Upload state:</td><td id="fw-state">–</td></tr>
+          <tr><td class="k" data-i18n="update_new_ver">Image version:</td><td id="fw-ver">&ndash;</td></tr>
+          <tr><td class="k" data-i18n="update_size">Size:</td><td id="fw-size">&ndash;</td></tr>
+          <tr><td class="k" data-i18n="update_md5">MD5:</td><td id="fw-md5">&ndash;</td></tr>
+          <tr><td class="k" data-i18n="update_size_check">Size check:</td><td id="fw-check">&ndash;</td></tr>
+          <tr><td class="k" data-i18n="update_upload_state">Upload state:</td><td id="fw-state">&ndash;</td></tr>
         </table>
       </div>
 
-      <div class="fw-actions">
-        <input type="button" id="btn-flash" value="Start Flashing" data-i18n="update_start_flash" disabled />
-      </div>
-    </div>
-
-    <div class="fw-modal-mask" id="mask">
-      <div class="fw-modal">
-        <h3 data-i18n="update_confirm_title">Flash this firmware?</h3>
-        <p data-i18n="update_confirm_hint">Type yes to start flashing. Pressing Enter with anything else cancels.</p>
-        <input type="text" id="yes-input" autocomplete="off" spellcheck="false"
-               data-i18n-placeholder="update_yes_placeholder" placeholder="输入 yes 开始刷写" />
-        <div class="fw-modal-actions">
-          <input type="button" id="btn-cancel" value="Cancel" data-i18n="update_cancel" />
-          <input type="button" id="btn-go" value="Start Flashing" data-i18n="update_confirm_btn" />
-        </div>
+      <div class="fw-note" data-i18n="update_auto_reboot">
+        Once the upload finishes the switch verifies the image and reboots
+        into it automatically. Do not power it off during that time.
       </div>
     </div>
 
@@ -94,7 +69,6 @@
     (function () {
       var EXPECT = 524288;   /* Makefile IMAGESIZE */
       var picked = null;
-      var uploadedOK = false;
       var busy = false;
 
       function $(id) { return document.getElementById(id); }
@@ -107,23 +81,22 @@
           if (this.readyState !== 4 || this.status !== 200) return;
           try {
             var d = JSON.parse(this.responseText);
-            txt('cur-sw', d.sw_ver || '–');
-            txt('cur-build', d.build_date || '–');
-            txt('cur-hw', d.hw_ver || '–');
+            txt('cur-sw', d.sw_ver || '\u2013');
+            txt('cur-build', d.build_date || '\u2013');
+            txt('cur-hw', d.hw_ver || '\u2013');
           } catch (e) {}
         };
         x.open('GET', '/information.json', true);
         x.send();
       }
 
-      /* 版本串形如 v0.1.0-c86d4b3；CI 里 git describe 失败时会退化成 v0.1.0-，
-         所以后缀允许为空。 */
+      /* CI 里 git describe 失败时版本串退化为 v0.1.0-, 故后缀允许为空 */
       function findVersion(bytes) {
         var pat = /v\d+\.\d+\.\d+-[0-9a-zA-Z]*/g;
-        var s = '', chunk = 65536;
         var dec = new TextDecoder('latin1');
+        var chunk = 65536;
         for (var off = 0; off < bytes.length; off += chunk) {
-          s = dec.decode(bytes.subarray(off, Math.min(off + chunk, bytes.length)));
+          var s = dec.decode(bytes.subarray(off, Math.min(off + chunk, bytes.length)));
           var m = pat.exec(s);
           if (m) {
             if (m.index + m[0].length < s.length || off + chunk >= bytes.length) return m[0];
@@ -133,20 +106,13 @@
         return null;
       }
 
-      function setFlashEnabled() {
-        $('btn-flash').disabled = !(uploadedOK && picked && picked.size === EXPECT);
-      }
-
       $('fwfile').addEventListener('change', function (e) {
         picked = e.target.files && e.target.files[0];
-        uploadedOK = false;
-        if (!picked) { $('fw-info').classList.remove('on'); setFlashEnabled(); return; }
-
+        if (!picked) { $('fw-info').classList.remove('on'); return; }
         var fr = new FileReader();
         fr.onload = function () {
           var bytes = new Uint8Array(fr.result);
-          var ver = findVersion(bytes);
-          txt('fw-ver', ver || '(not found)');
+          txt('fw-ver', findVersion(bytes) || '(not found)');
           txt('fw-size', (picked.size / 1024).toFixed(1) + ' KB (' + picked.size + ' bytes)');
           txt('fw-md5', md5Bytes(bytes));
           var ok = (picked.size === EXPECT);
@@ -155,14 +121,13 @@
           txt('fw-state', t('update_state_idle'));
           cls('fw-state', 'fw-dim');
           $('fw-info').classList.add('on');
-          setFlashEnabled();
         };
         fr.readAsArrayBuffer(picked);
       });
 
-      /* 设备写完 flash 后只关闭 TCP 连接, 不发 HTTP 响应, 因此
-         onload/onerror 都可能永不触发。判定依据是"字节是否全部发出",
-         而不是"是否收到响应"。 */
+      /* 设备写完 flash 后只关 TCP, 不发 HTTP 响应, 故不能依赖
+         onload/onerror; 判定依据是字节是否全部发出。真正的完整性
+         由设备端 CRC16 把关。 */
       $('btn-upload').addEventListener('click', function () {
         if (!picked) { alert(t('update_pick_first')); return; }
         if (busy) return;
@@ -185,29 +150,14 @@
           if (timer) clearTimeout(timer);
           busy = false;
           $('btn-upload').disabled = false;
-
-          var allSent = (total > 0 && sent >= total);
           if (kind === '401') {
-            uploadedOK = false;
-            txt('fw-state', t('update_state_401'));
-            cls('fw-state', 'fw-bad');
+            txt('fw-state', t('update_state_401')); cls('fw-state', 'fw-bad');
           } else if (kind === 'short') {
-            uploadedOK = false;
-            txt('fw-state', t('update_state_short'));
-            cls('fw-state', 'fw-bad');
-          } else if (allSent || kind === 'timeout') {
-            /* 字节全部发出(或超时但已发出), 视为设备已接收。
-               完整性由设备端 CRC16 把关, 失败它会拒绝刷入。 */
-            uploadedOK = true;
-            $('prog').style.width = '100%';
-            txt('fw-state', t('update_state_staged'));
-            cls('fw-state', 'fw-ok');
+            txt('fw-state', t('update_state_short')); cls('fw-state', 'fw-bad');
           } else {
-            uploadedOK = false;
-            txt('fw-state', t('update_state_failed'));
-            cls('fw-state', 'fw-bad');
+            $('prog').style.width = '100%';
+            txt('fw-state', t('update_state_writing')); cls('fw-state', 'fw-ok');
           }
-          setFlashEnabled();
         }
 
         var x = new XMLHttpRequest();
@@ -217,55 +167,15 @@
             $('prog').style.width = Math.round(sent * 100 / total) + '%';
           }
         };
-        x.upload.onload = function () {
-          /* 字节发完了, 但设备还在写 flash, 可能要几十秒 */
-          txt('fw-state', t('update_state_writing'));
-        };
         x.onload = function () { settle(x.status === 401 ? '401' : 'ok'); };
         x.onerror = function () { settle(total > 0 && sent < total ? 'short' : 'ok'); };
         x.onabort = function () { settle('abort'); };
-        /* 兜底: 设备写 512KB flash 可能很慢, 给足 3 分钟 */
         timer = setTimeout(function () { settle('timeout'); }, 180000);
-
         x.open('POST', '/upload', true);
         x.send(fd);
       });
 
-      function openConfirm() { $('mask').classList.add('on'); $('yes-input').value = ''; $('yes-input').focus(); }
-      function closeConfirm() { $('mask').classList.remove('on'); }
-
-      $('btn-flash').addEventListener('click', function () {
-        if (this.disabled) return;
-        openConfirm();
-      });
-      $('btn-cancel').addEventListener('click', closeConfirm);
-      $('mask').addEventListener('click', function (e) {
-        if (e.target === $('mask')) closeConfirm();
-      });
-
-      function submitConfirm() {
-        var v = ($('yes-input').value || '').trim();
-        if (v !== 'yes') { closeConfirm(); return; }
-        closeConfirm();
-        doFlash();
-      }
-      $('yes-input').addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); submitConfirm(); }
-        if (e.key === 'Escape') { e.preventDefault(); closeConfirm(); }
-      });
-      $('btn-go').addEventListener('click', submitConfirm);
-
-      function doFlash() {
-        $('btn-flash').disabled = true;
-        txt('fw-state', t('update_flashing'));
-        cls('fw-state', 'fw-ok');
-        var x = new XMLHttpRequest();
-        x.open('GET', '/reset', true);
-        x.send();
-      }
-
       loadCurrent();
-      setFlashEnabled();
     })();
     </script>
   </body>
