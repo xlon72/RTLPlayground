@@ -346,14 +346,10 @@ uint8_t stream_upload(uint16_t bptr)
 			if (verify_crc) {
 				dbg_string("CRC16: "); dbg_short(crc_final); dbg_char('\n');
 				if (crc_final == 0xb001) {
-					/* Staged only. The web UI shows version/size/MD5 and requires
-					 * the user to type "yes" before committing, which it does by
-					 * requesting /reset. Rebooting here would skip that step.
-					 * check_and_flash_update_image() re-verifies the CRC16 after
-					 * the reboot, so an incomplete upload is still rejected. */
-					print_string("Checksum OK.\nUpload to flash done, waiting for /reset\n");
+					print_string("Checksum OK.\nUpload to flash done, will reset!\n");
 					// close connection to avoid retries by browser
 					uip_close();
+					reset_chip();
 				} else {
 					print_string("Checksum incorrect! Aborting.\n");
 					uip_close();
