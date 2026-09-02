@@ -27,8 +27,6 @@ extern __code const struct machine machine;
 extern __xdata uint8_t outbuf[TCP_OUTBUF_SIZE];
 extern __xdata uint16_t slen;
 extern __xdata uint16_t management_vlan;
-extern __xdata uint16_t cont_len;
-extern __xdata uint32_t cont_addr;
 extern __code uint8_t * __code hex;
 extern __xdata uip_ipaddr_t uip_hostaddr, uip_draddr, uip_netmask;
 
@@ -373,7 +371,7 @@ void send_l2(uint16_t idx)
 		__bit valid = (sfr_data[0] & 0x20) != 0;
 		if (valid) {
 			/* separator + 74-byte worst-case entry + closing "]" */
-			if (slen + 76 > TCP_OUTBUF_SIZE)
+			if (slen + 76 > uip_mss())
 				break;
 			if (!first)
 				char_to_html(',');
@@ -831,10 +829,14 @@ void send_config(void)
 	
 found_end:
 	// Now send the valid data
-	if (valid_len > (TCP_OUTBUF_SIZE - slen)) {
-		cont_len = valid_len - (TCP_OUTBUF_SIZE - slen);
-		valid_len = TCP_OUTBUF_SIZE - slen;
-		cont_addr = valid_len;
+	/* The config lives in flash, so the tail can be re-read per
+	 * connection instead of being left in the shared outbuf.
+	 * (cont_addr used to be set to valid_len here, which is a byte
+	 * count rather than a flash address.) */
+	if (uip_mss() > slen && valid_len > (uip_mss() - slen)) {
+		uip_conn->appstate.cont_len = valid_len - (uip_mss() - slen);
+		valid_len = uip_mss() - slen;
+		uip_conn->appstate.cont_addr = CONFIG_START + valid_len;
 	}
 	
 	flash_region.addr = CONFIG_START;
@@ -881,7 +883,7 @@ void send_vlanlist(void)
 		if (!(sfr_data[0] & 0x02)) /* bit 1: VLAN table entry valid */
 			continue;
 
-		if (slen + 141 > TCP_OUTBUF_SIZE) /* comma + 138-byte worst-case entry + closing "]}" */
+		if (slen + 141 > uip_mss()) /* comma + 138-byte worst-case entry + closing "]}" */
 			break;
 
 		if (!first)
